@@ -11,15 +11,19 @@ export function createMapGrid() {
   return {
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
-    tiles: Array.from({ length: MAP_WIDTH * MAP_HEIGHT }, (_, index) => ({
-      index,
-      x: index % MAP_WIDTH,
-      y: Math.floor(index / MAP_WIDTH),
-      terrain: "grass",
-      buildingId: null,
-      resourceNodeId: null,
-      buildable: false,
-    })),
+    tiles: Array.from({ length: MAP_WIDTH * MAP_HEIGHT }, (_, index) => {
+      const x = index % MAP_WIDTH;
+      const y = Math.floor(index / MAP_WIDTH);
+      return {
+        index,
+        x,
+        y,
+        terrain: "grass",
+        buildingId: null,
+        resourceNodeId: null,
+        buildable: isInitialBuildable(x, y),
+      };
+    }),
   };
 }
 
