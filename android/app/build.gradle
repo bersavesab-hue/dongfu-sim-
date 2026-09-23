@@ -1,0 +1,32 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.dongfu.sim"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.dongfu.sim"
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ["src/main/assets"]
+        }
+    }
+
+    tasks.register("syncWebAssets", Sync) {
+        from(rootProject.file("../index.html"))
+        from(rootProject.file("../src")) {
+            into("src")
+        }
+        into(project.file("src/main/assets"))
+    }
+
+    preBuild.dependsOn(syncWebAssets)
+}
