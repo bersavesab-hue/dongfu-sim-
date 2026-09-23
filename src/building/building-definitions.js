@@ -33,6 +33,7 @@ export const BUILDING_DEFINITIONS = Object.freeze({
     height: 2,
     cost: { materials: 18 },
     color: "#a66f52",
+    effects: Object.freeze({ foodConsumptionReduction: 0.25, moodPerTick: 0.1 }),
   }),
   warehouse: Object.freeze({
     id: "warehouse",
@@ -41,6 +42,7 @@ export const BUILDING_DEFINITIONS = Object.freeze({
     height: 2,
     cost: { materials: 24 },
     color: "#766d9b",
+    storage: Object.freeze({ food: 240, materials: 160, incense: 120 }),
   }),
 });
 
