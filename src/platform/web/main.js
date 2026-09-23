@@ -2,6 +2,7 @@ import { BUILDING_ORDER, getBuildingDefinition } from "../../building/building-d
 import { createBuildingState, canPlaceBuilding } from "../../core/building-state.js";
 import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
+import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
 import { IsoCamera } from "../../render/iso-camera.js";
 import { MapRenderer } from "../../render/map-renderer.js";
 
@@ -11,7 +12,7 @@ const resources = document.querySelector("#resources");
 const camera = new IsoCamera();
 const renderer = new MapRenderer(canvas, camera);
 const map = createMapGrid();
-const gameState = createBuildingState(map);
+const gameState = loadGameState(map, window.localStorage);
 
 let viewport = { width: window.innerWidth, height: window.innerHeight };
 let pointer = { active: false, moved: false, x: 0, y: 0 };
@@ -36,6 +37,11 @@ function resize() {
     resize.didCenter = true;
   }
   renderer.render(viewport.width, viewport.height);
+}
+
+function persistGame(message = "已保存") {
+  saveGameState(gameState, window.localStorage);
+  status.textContent = message;
 }
 
 function updateResources() {
@@ -117,7 +123,7 @@ function handleMapClick(tile) {
     }
     renderer.setSelectedTile(tile);
     updateResources();
-    updateStatus(tile, `已建造 ${result.building.name}`);
+    persistGame(`已建造 ${result.building.name} · 已自动保存`);
     renderer.render(viewport.width, viewport.height);
     return;
   }
@@ -133,7 +139,7 @@ function handleMapClick(tile) {
     });
     if (result.ok) {
       updateResources();
-      updateStatus(tile, `已拆除 ${result.building.name}，返还 50% 材料`);
+      persistGame(`已拆除 ${result.building.name}，返还 50% 材料 · 已自动保存`);
       renderer.render(viewport.width, viewport.height);
     }
     return;
@@ -180,12 +186,18 @@ document.querySelectorAll(".build-button").forEach((button) => {
 });
 document.querySelector("#demolish-button").addEventListener("click", () => setMode("demolish"));
 document.querySelector("#cancel-button").addEventListener("click", () => setMode("inspect"));
+document.querySelector("#save-button").addEventListener("click", () => persistGame());
+document.querySelector("#reset-button").addEventListener("click", () => {
+  clearGameSave(window.localStorage);
+  window.location.reload();
+});
 document.querySelector("#rotate-button").addEventListener("click", () => {
   rotation = (rotation + 1) % 4;
   status.textContent = `建筑方向：${rotation % 2 === 0 ? "默认" : "旋转 90°"}`;
   renderer.render(viewport.width, viewport.height);
 });
 
+window.addEventListener("beforeunload", () => saveGameState(gameState, window.localStorage));
 window.addEventListener("resize", resize);
 renderer.setMap(map);
 renderer.setGameState(gameState);
