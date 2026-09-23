@@ -1,14 +1,19 @@
-import { BUILDING_ORDER, getBuildingDefinition } from "../../building/building-definitions.js";
+import { getBuildingDefinition } from "../../building/building-definitions.js";
 import { createBuildingState, canPlaceBuilding } from "../../core/building-state.js";
 import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
+import { advanceSimulation, formatGameTime, setResidentJob } from "../../core/simulation.js";
+import { JOB_DEFINITIONS } from "../../residents/resident-definitions.js";
 import { IsoCamera } from "../../render/iso-camera.js";
 import { MapRenderer } from "../../render/map-renderer.js";
 
 const canvas = document.querySelector("#game-canvas");
 const status = document.querySelector("#status");
 const resources = document.querySelector("#resources");
+const timeDisplay = document.querySelector("#time-display");
+const residentPanel = document.querySelector("#resident-panel");
+const pauseButton = document.querySelector("#pause-button");
 const camera = new IsoCamera();
 const renderer = new MapRenderer(canvas, camera);
 const map = createMapGrid();
@@ -46,6 +51,22 @@ function persistGame(message = "已保存") {
 
 function updateResources() {
   resources.textContent = `粮食 ${gameState.resources.food} · 材料 ${gameState.resources.materials} · 香火 ${gameState.resources.incense}`;
+}
+
+function updateSimulationUI() {
+  timeDisplay.textContent = formatGameTime(gameState);
+  pauseButton.textContent = gameState.paused ? "继续时间" : "暂停时间";
+  residentPanel.innerHTML = gameState.residents.map((resident) => {
+    const job = JOB_DEFINITIONS[resident.job];
+    return `<div class="resident-card">
+      <div class="resident-name"><i style="background:${resident.color}"></i>${resident.name} · ${resident.title}</div>
+      <div class="resident-meta">精力 ${Math.round(resident.energy)} · 心情 ${Math.round(resident.mood)}</div>
+      <div class="resident-jobs">
+        ${Object.values(JOB_DEFINITIONS).map((item) => `<button data-resident="${resident.id}" data-job="${item.id}" class="${item.id === resident.job ? "selected" : ""}">${item.name}</button>`).join("")}
+      </div>
+      <div class="resident-output">当前：${job.name}</div>
+    </div>`;
+  }).join("");
 }
 
 function updateStatus(tile, message = "") {
@@ -181,6 +202,16 @@ canvas.addEventListener("wheel", (event) => {
   refreshPreview(event.clientX, event.clientY);
 }, { passive: false });
 
+residentPanel.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-job]");
+  if (!button) return;
+  const result = setResidentJob(gameState, button.dataset.resident, button.dataset.job);
+  if (result.ok) {
+    updateSimulationUI();
+    persistGame(`${result.resident.name} 已转为${JOB_DEFINITIONS[result.resident.job].name}`);
+  }
+});
+
 document.querySelectorAll(".build-button").forEach((button) => {
   button.addEventListener("click", () => setMode("build", button.dataset.building));
 });
@@ -191,15 +222,32 @@ document.querySelector("#reset-button").addEventListener("click", () => {
   clearGameSave(window.localStorage);
   window.location.reload();
 });
+document.querySelector("#pause-button").addEventListener("click", () => {
+  gameState.paused = !gameState.paused;
+  updateSimulationUI();
+  persistGame(gameState.paused ? "时间已暂停" : "时间继续推进");
+});
 document.querySelector("#rotate-button").addEventListener("click", () => {
   rotation = (rotation + 1) % 4;
   status.textContent = `建筑方向：${rotation % 2 === 0 ? "默认" : "旋转 90°"}`;
   renderer.render(viewport.width, viewport.height);
 });
 
+window.setInterval(() => {
+  const before = gameState.timeMinutes;
+  advanceSimulation(gameState, 10);
+  updateResources();
+  updateSimulationUI();
+  if (!gameState.paused && before !== gameState.timeMinutes && gameState.timeMinutes % 60 === 0) {
+    saveGameState(gameState, window.localStorage);
+  }
+  renderer.render(viewport.width, viewport.height);
+}, 1000);
+
 window.addEventListener("beforeunload", () => saveGameState(gameState, window.localStorage));
 window.addEventListener("resize", resize);
 renderer.setMap(map);
 renderer.setGameState(gameState);
 updateResources();
+updateSimulationUI();
 resize();
