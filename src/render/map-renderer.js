@@ -1,3 +1,5 @@
+import { BUILDING_MODEL_FRAMES, MODEL_ATLAS_URL, MODEL_CELL_SIZE, RESIDENT_MODEL_FRAMES } from "./model-atlas.js";
+
 const COLORS = Object.freeze({
   background: "#0c1522",
   grass: "#273e3a",
@@ -21,6 +23,12 @@ export class MapRenderer {
     this.previewTile = null;
     this.previewDefinition = null;
     this.previewRotation = 0;
+    this.modelAtlas = new Image();
+    this.modelAtlasReady = false;
+    this.modelAtlas.addEventListener("load", () => {
+      this.modelAtlasReady = true;
+    });
+    this.modelAtlas.src = MODEL_ATLAS_URL;
   }
 
   setMap(map) {
@@ -76,6 +84,7 @@ export class MapRenderer {
     }
 
     this.drawBuildings(ctx);
+    this.drawResidents(ctx);
     this.drawPreview(ctx);
     this.drawLegend(ctx);
   }
@@ -112,38 +121,96 @@ export class MapRenderer {
 
   drawBuildings(ctx) {
     if (!this.gameState) return;
-    for (const building of this.gameState.buildings) {
+    const buildings = [...this.gameState.buildings].sort((a, b) => (a.x + a.y) - (b.x + b.y));
+    for (const building of buildings) {
       const definition = building.definition ?? building;
-      const top = this.camera.worldToScreen(building.x, building.y);
-      const right = this.camera.worldToScreen(building.x + building.width, building.y);
-      const bottom = this.camera.worldToScreen(building.x + building.width, building.y + building.height);
-      const left = this.camera.worldToScreen(building.x, building.y + building.height);
-      const height = Math.max(5, 14 * this.camera.zoom);
-      ctx.beginPath();
-      ctx.moveTo(top.x, top.y - height);
-      ctx.lineTo(right.x, right.y - height);
-      ctx.lineTo(bottom.x, bottom.y - height);
-      ctx.lineTo(left.x, left.y - height);
-      ctx.closePath();
-      ctx.fillStyle = definition.color ?? "#8398a8";
-      ctx.globalAlpha = 0.96;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = "rgba(255,255,255,0.35)";
-      ctx.lineWidth = Math.max(1, this.camera.zoom);
-      ctx.stroke();
-
-      const label = definition.name ?? building.typeId;
       const center = this.camera.worldToScreen(
         building.x + building.width / 2,
         building.y + building.height / 2,
       );
+      const scale = this.camera.zoom;
+      const frame = BUILDING_MODEL_FRAMES[building.typeId];
+
+      if (this.modelAtlasReady && frame !== undefined) {
+        const size = MODEL_CELL_SIZE * scale;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(
+          this.modelAtlas,
+          frame * MODEL_CELL_SIZE,
+          0,
+          MODEL_CELL_SIZE,
+          MODEL_CELL_SIZE,
+          center.x - size / 2,
+          center.y - size * 0.76,
+          size,
+          size,
+        );
+      } else {
+        const height = Math.max(5, 14 * scale);
+        const top = this.camera.worldToScreen(building.x, building.y);
+        const right = this.camera.worldToScreen(building.x + building.width, building.y);
+        const bottom = this.camera.worldToScreen(building.x + building.width, building.y + building.height);
+        const left = this.camera.worldToScreen(building.x, building.y + building.height);
+        ctx.beginPath();
+        ctx.moveTo(top.x, top.y - height);
+        ctx.lineTo(right.x, right.y - height);
+        ctx.lineTo(bottom.x, bottom.y - height);
+        ctx.lineTo(left.x, left.y - height);
+        ctx.closePath();
+        ctx.fillStyle = definition.color ?? "#8398a8";
+        ctx.fill();
+      }
+
+      const label = definition.name ?? building.typeId;
+      ctx.save();
       ctx.fillStyle = COLORS.text;
-      ctx.font = `${Math.max(9, 11 * this.camera.zoom)}px system-ui, sans-serif`;
+      ctx.strokeStyle = "rgba(8,14,22,0.9)";
+      ctx.lineWidth = Math.max(2, 3 * scale);
+      ctx.font = `${Math.max(9, 11 * scale)}px system-ui, sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText(label, center.x, center.y - height - 2);
-      ctx.textAlign = "start";
+      ctx.strokeText(label, center.x, center.y - 82 * scale);
+      ctx.fillText(label, center.x, center.y - 82 * scale);
+      ctx.restore();
     }
+  }
+
+  drawResidents(ctx) {
+    if (!this.gameState?.residents?.length || !this.modelAtlasReady) return;
+    const offsets = [
+      { x: -0.35, y: 0.55 },
+      { x: 0.3, y: 0.7 },
+      { x: 0.65, y: 0.25 },
+    ];
+    this.gameState.residents.forEach((resident, index) => {
+      const home = this.gameState.buildings.find((building) => building.id === resident.homeBuildingId);
+      const offset = offsets[index % offsets.length];
+      const worldX = home ? home.x + home.width / 2 + offset.x : 63.5 + index * 0.65;
+      const worldY = home ? home.y + home.height / 2 + offset.y : 65.2;
+      const point = this.camera.worldToScreen(worldX, worldY);
+      const frame = RESIDENT_MODEL_FRAMES[resident.id];
+      if (frame === undefined) return;
+      const size = 76 * this.camera.zoom;
+      ctx.drawImage(
+        this.modelAtlas,
+        frame * MODEL_CELL_SIZE,
+        0,
+        MODEL_CELL_SIZE,
+        MODEL_CELL_SIZE,
+        point.x - size / 2,
+        point.y - size * 0.88,
+        size,
+        size,
+      );
+      ctx.save();
+      ctx.fillStyle = COLORS.text;
+      ctx.strokeStyle = "rgba(8,14,22,0.9)";
+      ctx.lineWidth = Math.max(2, 2.5 * this.camera.zoom);
+      ctx.font = `${Math.max(8, 10 * this.camera.zoom)}px system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.strokeText(resident.name, point.x, point.y - size * 0.78);
+      ctx.fillText(resident.name, point.x, point.y - size * 0.78);
+      ctx.restore();
+    });
   }
 
   drawPreview(ctx) {
