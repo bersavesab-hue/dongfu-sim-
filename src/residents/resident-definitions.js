@@ -34,6 +34,6 @@ export function createInitialResidents() {
     level: 1,
     energy: 100,
     mood: 80,
-    assignedBuildingId: null,
+    homeBuildingId: null,
   }));
 }
