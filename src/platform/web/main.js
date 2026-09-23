@@ -3,7 +3,7 @@ import { createBuildingState, canPlaceBuilding } from "../../core/building-state
 import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
-import { advanceSimulation, assignResidentHome, formatGameTime, getHousingSummary, setResidentJob } from "../../core/simulation.js";
+import { advanceSimulation, assignResidentHome, enforceResourceLimits, formatGameTime, getHousingSummary, getResourceLimits, getSettlementEffects, setResidentJob } from "../../core/simulation.js";
 import { JOB_DEFINITIONS } from "../../residents/resident-definitions.js";
 import { IsoCamera } from "../../render/iso-camera.js";
 import { MapRenderer } from "../../render/map-renderer.js";
@@ -54,7 +54,8 @@ function persistGame(message = "已保存") {
 }
 
 function updateResources() {
-  resources.textContent = `粮食 ${gameState.resources.food} · 材料 ${gameState.resources.materials} · 香火 ${gameState.resources.incense}`;
+  const limits = getResourceLimits(gameState);
+  resources.textContent = `粮食 ${Math.floor(gameState.resources.food)}/${limits.food} · 材料 ${Math.floor(gameState.resources.materials)}/${limits.materials} · 香火 ${Math.floor(gameState.resources.incense)}/${limits.incense}`;
 }
 
 function homeOptions(resident) {
@@ -71,7 +72,9 @@ function updateSimulationUI() {
   timeDisplay.textContent = formatGameTime(gameState);
   pauseButton.textContent = gameState.paused ? "继续时间" : "暂停时间";
   const housing = getHousingSummary(gameState);
-  residentPanel.innerHTML = `<div class="resident-summary">居所入住 ${housing.occupied}/${housing.capacity}</div>` + gameState.residents.map((resident) => {
+  const effects = getSettlementEffects(gameState);
+  const saving = Math.round(effects.foodConsumptionReduction * 100);
+  residentPanel.innerHTML = `<div class="resident-summary">居所 ${housing.occupied}/${housing.capacity} · 膳堂 ${effects.canteens} · 节粮 ${saving}%</div>` + gameState.residents.map((resident) => {
     const job = JOB_DEFINITIONS[resident.job];
     const housed = housing.residences.some((building) => building.id === resident.homeBuildingId);
     return `<div class="resident-card">
@@ -162,6 +165,7 @@ function handleMapClick(tile) {
       return;
     }
     renderer.setSelectedTile(tile);
+    enforceResourceLimits(gameState);
     updateResources();
     updateSimulationUI();
     persistGame(`已建造 ${result.building.name} · 已自动保存`);
@@ -179,6 +183,7 @@ function handleMapClick(tile) {
       buildingId: tile.buildingId,
     });
     if (result.ok) {
+      enforceResourceLimits(gameState);
       updateResources();
       updateSimulationUI();
       persistGame(`已拆除 ${result.building.name}，返还 50% 材料 · 已自动保存`);
