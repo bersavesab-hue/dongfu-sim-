@@ -1,4 +1,5 @@
 import { getBuildingDefinition, getFootprint } from "../building/building-definitions.js";
+import { isInsideMap } from "./map-grid.js";
 
 export function createBuildingState(map) {
   return {
@@ -36,8 +37,10 @@ export function canPlaceBuilding(state, typeId, x, y, rotation = 0) {
 
   for (let row = 0; row < footprint.height; row += 1) {
     for (let column = 0; column < footprint.width; column += 1) {
-      const tile = state.map.tiles[(y + row) * state.map.width + (x + column)];
-      if (!tile) return { ok: false, reason: "outside_map" };
+      const tileX = x + column;
+      const tileY = y + row;
+      if (!isInsideMap(tileX, tileY)) return { ok: false, reason: "outside_map" };
+      const tile = state.map.tiles[tileY * state.map.width + tileX];
       if (!tile.buildable) return { ok: false, reason: "not_buildable" };
       if (tile.buildingId) return { ok: false, reason: "occupied" };
     }
