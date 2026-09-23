@@ -9,30 +9,45 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0c1522; }
       #game-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-      #resources, #status {
+      #resources, #time-display, #status {
         position: fixed; left: 16px; right: 16px; padding: 11px 14px;
         border: 1px solid rgba(255,255,255,.12); border-radius: 10px;
         background: rgba(8,14,22,.88); color: #eef3e8; font-size: 14px;
         pointer-events: none;
       }
       #resources { top: 16px; right: auto; min-width: 250px; color: #f8d477; }
-      #status { bottom: 16px; }
+      #time-display { top: 59px; right: auto; min-width: 190px; color: #b7d9ee; }
+      #status { bottom: 16px; right: 310px; }
       #build-toolbar {
         position: fixed; top: 16px; right: 16px; width: min(250px, calc(100vw - 32px));
         display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
       }
+      #resident-panel {
+        position: fixed; right: 16px; bottom: 62px; width: min(286px, calc(100vw - 32px));
+        max-height: 42vh; overflow-y: auto; padding: 8px;
+        border: 1px solid rgba(255,255,255,.12); border-radius: 10px;
+        background: rgba(8,14,22,.9);
+      }
+      .resident-card { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,.1); }
+      .resident-card:last-child { border-bottom: 0; }
+      .resident-name { color: #eef3e8; font-size: 13px; }
+      .resident-name i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+      .resident-meta, .resident-output { color: #a8b5ae; font-size: 11px; margin-top: 4px; }
+      .resident-jobs { display: flex; gap: 5px; margin-top: 6px; }
       button {
         border: 1px solid rgba(255,255,255,.18); border-radius: 9px;
         padding: 10px 7px; background: rgba(8,14,22,.9); color: #eef3e8;
         font-size: 13px; text-align: left;
       }
-      button.active { border-color: #f8d477; background: #5d4d2e; }
-      #cancel-button, #rotate-button { text-align: center; }
+      button.active, .resident-jobs button.selected { border-color: #f8d477; background: #5d4d2e; }
+      .resident-jobs button { padding: 4px 6px; font-size: 11px; }
+      #cancel-button, #rotate-button, #pause-button { text-align: center; }
     </style>
   </head>
   <body>
     <canvas id="game-canvas" aria-label="洞府经营地图"></canvas>
     <div id="resources">粮食 120 · 材料 80 · 香火 0</div>
+    <div id="time-display">第 1 天 06:00</div>
     <div id="build-toolbar">
       <button class="build-button" data-building="residence">居所 · 20材</button>
       <button class="build-button" data-building="farm">灵田 · 12材</button>
@@ -42,9 +57,11 @@
       <button id="rotate-button">旋转</button>
       <button id="demolish-button">拆除</button>
       <button id="cancel-button">查看</button>
+      <button id="pause-button">暂停时间</button>
       <button id="save-button">保存</button>
       <button id="reset-button">重置</button>
     </div>
+    <div id="resident-panel" aria-label="仙人面板"></div>
     <div id="status">点击地图查看格子</div>
     <script type="module" src="./src/platform/web/main.js"></script>
   </body>
