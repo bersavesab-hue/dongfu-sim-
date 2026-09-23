@@ -1,3 +1,4 @@
+import { getBuildingDefinition } from "../building/building-definitions.js";
 import { JOB_DEFINITIONS, createInitialResidents } from "../residents/resident-definitions.js";
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -6,8 +7,17 @@ export function ensureSimulationState(state) {
   state.day ??= 1;
   state.timeMinutes ??= 360;
   state.paused ??= false;
+  state.buildings ??= [];
   if (!Array.isArray(state.residents) || state.residents.length === 0) {
     state.residents = createInitialResidents();
+  }
+  for (const resident of state.residents) {
+    if (resident.homeBuildingId === undefined) {
+      resident.homeBuildingId = resident.assignedBuildingId ?? null;
+    }
+    delete resident.assignedBuildingId;
+    resident.energy ??= 100;
+    resident.mood ??= 80;
   }
   return state;
 }
@@ -17,6 +27,34 @@ export function formatGameTime(state) {
   const hour = Math.floor(minutes / 60).toString().padStart(2, "0");
   const minute = (minutes % 60).toString().padStart(2, "0");
   return `第 ${state.day} 天 ${hour}:${minute}`;
+}
+
+export function getHousingSummary(state) {
+  ensureSimulationState(state);
+  const residences = state.buildings.filter((building) => building.typeId === "residence");
+  const capacity = residences.reduce((sum, building) => sum + (getBuildingDefinition(building.typeId)?.capacity ?? 0), 0);
+  const validHomes = new Set(residences.map((building) => building.id));
+  const occupied = state.residents.filter((resident) => validHomes.has(resident.homeBuildingId)).length;
+  return { occupied, capacity, residences };
+}
+
+export function assignResidentHome(state, residentId, buildingId) {
+  ensureSimulationState(state);
+  const resident = state.residents.find((item) => item.id === residentId);
+  if (!resident) return { ok: false, reason: "resident_not_found" };
+  if (!buildingId) {
+    resident.homeBuildingId = null;
+    return { ok: true, resident, building: null };
+  }
+  const building = state.buildings.find((item) => item.id === buildingId);
+  if (!building) return { ok: false, reason: "home_not_found" };
+  if (building.typeId !== "residence") return { ok: false, reason: "home_not_residence" };
+  const capacity = getBuildingDefinition(building.typeId)?.capacity ?? 0;
+  const occupied = state.residents.filter((item) => item.homeBuildingId === buildingId && item.id !== residentId).length;
+  if (occupied >= capacity) return { ok: false, reason: "home_full" };
+  resident.homeBuildingId = buildingId;
+  resident.mood = Math.min(100, resident.mood + 3);
+  return { ok: true, resident, building };
 }
 
 export function setResidentJob(state, residentId, jobId) {
@@ -56,11 +94,17 @@ export function advanceSimulation(state, minutes = 10) {
   state.resources.materials += produced.materials;
   state.resources.incense += produced.incense;
 
+  const validHomes = new Set(getHousingSummary(state).residences.map((building) => building.id));
   for (const resident of state.residents) {
     resident.energy = Math.max(0, resident.energy - minutes * 0.04);
-    resident.mood = state.resources.food > 0
-      ? Math.min(100, resident.mood + 0.1)
-      : Math.max(0, resident.mood - 0.5);
+    const housed = validHomes.has(resident.homeBuildingId);
+    if (!housed) {
+      resident.mood = Math.max(0, resident.mood - 0.35);
+    } else if (state.resources.food > 0) {
+      resident.mood = Math.min(100, resident.mood + 0.1);
+    } else {
+      resident.mood = Math.max(0, resident.mood - 0.5);
+    }
   }
 
   state.timeMinutes += minutes;
