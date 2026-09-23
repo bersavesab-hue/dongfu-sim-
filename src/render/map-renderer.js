@@ -242,10 +242,10 @@ export class MapRenderer {
     ctx.fillRect(16, 16, 274, 76);
     ctx.fillStyle = COLORS.text;
     ctx.font = "600 16px system-ui, sans-serif";
-    ctx.fillText("洞府经营 · 地图原型", 30, 41);
+    ctx.fillText("洞府经营 · 云岭洞天", 30, 41);
     ctx.fillStyle = COLORS.muted;
     ctx.font = "13px system-ui, sans-serif";
     ctx.fillText("拖动移动 · 滚轮缩放 · 选择建筑后点击建造", 30, 64);
-    ctx.fillText("金色区域：初始 20×20 建造区", 30, 83);
+    ctx.fillText("金色区域：初始洞府建造区", 30, 83);
   }
 }
