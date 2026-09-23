@@ -59,6 +59,8 @@ export function placeBuilding(state, typeId, x, y, rotation = 0) {
   const building = {
     id,
     typeId,
+    name: check.definition.name,
+    color: check.definition.color,
     x,
     y,
     rotation: rotation % 4,
