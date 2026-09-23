@@ -2,6 +2,11 @@ import { getBuildingDefinition } from "../building/building-definitions.js";
 import { JOB_DEFINITIONS, createInitialResidents } from "../residents/resident-definitions.js";
 
 const MINUTES_PER_DAY = 24 * 60;
+const BASE_RESOURCE_LIMITS = Object.freeze({ food: 240, materials: 160, incense: 100 });
+
+function roundResource(value) {
+  return Math.round(value * 100) / 100;
+}
 
 export function ensureSimulationState(state) {
   state.day ??= 1;
@@ -27,6 +32,38 @@ export function formatGameTime(state) {
   const hour = Math.floor(minutes / 60).toString().padStart(2, "0");
   const minute = (minutes % 60).toString().padStart(2, "0");
   return `第 ${state.day} 天 ${hour}:${minute}`;
+}
+
+export function getResourceLimits(state) {
+  const limits = { ...BASE_RESOURCE_LIMITS };
+  for (const building of state.buildings ?? []) {
+    const storage = getBuildingDefinition(building.typeId)?.storage;
+    if (!storage) continue;
+    for (const resource of Object.keys(limits)) limits[resource] += storage[resource] ?? 0;
+  }
+  return limits;
+}
+
+export function enforceResourceLimits(state) {
+  const limits = getResourceLimits(state);
+  for (const resource of Object.keys(limits)) {
+    state.resources[resource] = roundResource(Math.max(0, Math.min(state.resources[resource] ?? 0, limits[resource])));
+  }
+  return limits;
+}
+
+export function getSettlementEffects(state) {
+  const canteens = (state.buildings ?? []).filter((building) => building.typeId === "canteen").length;
+  const definition = getBuildingDefinition("canteen");
+  const reductionPerBuilding = definition?.effects?.foodConsumptionReduction ?? 0;
+  const moodPerBuilding = definition?.effects?.moodPerTick ?? 0;
+  const foodConsumptionReduction = Math.min(0.5, canteens * reductionPerBuilding);
+  return {
+    canteens,
+    foodConsumptionReduction,
+    foodConsumptionMultiplier: 1 - foodConsumptionReduction,
+    moodBonusPerTick: Math.min(0.2, canteens * moodPerBuilding),
+  };
 }
 
 export function getHousingSummary(state) {
@@ -83,16 +120,18 @@ export function advanceSimulation(state, minutes = 10) {
   const farmers = Math.min(countWorkingResidents(state, "farmer"), farms);
   const artisans = Math.min(countWorkingResidents(state, "artisan"), workshops);
   const stewards = countWorkingResidents(state, "steward");
+  const effects = getSettlementEffects(state);
 
   const produced = {
-    food: Math.floor(farmers * JOB_DEFINITIONS.farmer.amountPerHour * hours),
-    materials: Math.floor(artisans * JOB_DEFINITIONS.artisan.amountPerHour * hours),
-    incense: Math.floor(stewards * JOB_DEFINITIONS.steward.amountPerHour * hours),
+    food: farmers * JOB_DEFINITIONS.farmer.amountPerHour * hours,
+    materials: artisans * JOB_DEFINITIONS.artisan.amountPerHour * hours,
+    incense: stewards * JOB_DEFINITIONS.steward.amountPerHour * hours,
   };
-  const foodConsumed = Math.floor(state.residents.length * hours);
-  state.resources.food = Math.max(0, state.resources.food + produced.food - foodConsumed);
-  state.resources.materials += produced.materials;
-  state.resources.incense += produced.incense;
+  const foodConsumed = state.residents.length * hours * effects.foodConsumptionMultiplier;
+  state.resources.food = roundResource(state.resources.food + produced.food - foodConsumed);
+  state.resources.materials = roundResource(state.resources.materials + produced.materials);
+  state.resources.incense = roundResource(state.resources.incense + produced.incense);
+  enforceResourceLimits(state);
 
   const validHomes = new Set(getHousingSummary(state).residences.map((building) => building.id));
   for (const resident of state.residents) {
@@ -101,7 +140,7 @@ export function advanceSimulation(state, minutes = 10) {
     if (!housed) {
       resident.mood = Math.max(0, resident.mood - 0.35);
     } else if (state.resources.food > 0) {
-      resident.mood = Math.min(100, resident.mood + 0.1);
+      resident.mood = Math.min(100, resident.mood + 0.1 + effects.moodBonusPerTick);
     } else {
       resident.mood = Math.max(0, resident.mood - 0.5);
     }
@@ -113,5 +152,5 @@ export function advanceSimulation(state, minutes = 10) {
     state.day += 1;
     for (const resident of state.residents) resident.energy = Math.min(100, resident.energy + 35);
   }
-  return produced;
+  return { ...produced, foodConsumed };
 }
