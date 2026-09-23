@@ -3,7 +3,7 @@ import { createBuildingState, canPlaceBuilding } from "../../core/building-state
 import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
-import { advanceSimulation, formatGameTime, setResidentJob } from "../../core/simulation.js";
+import { advanceSimulation, assignResidentHome, formatGameTime, getHousingSummary, setResidentJob } from "../../core/simulation.js";
 import { JOB_DEFINITIONS } from "../../residents/resident-definitions.js";
 import { IsoCamera } from "../../render/iso-camera.js";
 import { MapRenderer } from "../../render/map-renderer.js";
@@ -32,6 +32,10 @@ const REASONS = Object.freeze({
   occupied: "这里已有建筑",
   insufficient_resources: "材料不足",
   unknown_command: "未知指令",
+  resident_not_found: "仙人不存在",
+  home_not_found: "居所不存在",
+  home_not_residence: "该建筑不是居所",
+  home_full: "该居所已满",
 });
 
 function resize() {
@@ -53,17 +57,32 @@ function updateResources() {
   resources.textContent = `粮食 ${gameState.resources.food} · 材料 ${gameState.resources.materials} · 香火 ${gameState.resources.incense}`;
 }
 
+function homeOptions(resident) {
+  const housing = getHousingSummary(gameState);
+  return [`<option value="">未安排居所</option>`, ...housing.residences.map((building) => {
+    const occupied = gameState.residents.filter((item) => item.homeBuildingId === building.id && item.id !== resident.id).length;
+    const capacity = getBuildingDefinition(building.typeId)?.capacity ?? 0;
+    const disabled = occupied >= capacity && resident.homeBuildingId !== building.id ? " disabled" : "";
+    return `<option value="${building.id}"${resident.homeBuildingId === building.id ? " selected" : ""}${disabled}>${building.name} · ${occupied}/${capacity}</option>`;
+  })].join("");
+}
+
 function updateSimulationUI() {
   timeDisplay.textContent = formatGameTime(gameState);
   pauseButton.textContent = gameState.paused ? "继续时间" : "暂停时间";
-  residentPanel.innerHTML = gameState.residents.map((resident) => {
+  const housing = getHousingSummary(gameState);
+  residentPanel.innerHTML = `<div class="resident-summary">居所入住 ${housing.occupied}/${housing.capacity}</div>` + gameState.residents.map((resident) => {
     const job = JOB_DEFINITIONS[resident.job];
+    const housed = housing.residences.some((building) => building.id === resident.homeBuildingId);
     return `<div class="resident-card">
       <div class="resident-name"><i style="background:${resident.color}"></i>${resident.name} · ${resident.title}</div>
-      <div class="resident-meta">精力 ${Math.round(resident.energy)} · 心情 ${Math.round(resident.mood)}</div>
+      <div class="resident-meta">精力 ${Math.round(resident.energy)} · 心情 ${Math.round(resident.mood)} · ${housed ? "已有居所" : "暂无居所"}</div>
       <div class="resident-jobs">
         ${Object.values(JOB_DEFINITIONS).map((item) => `<button data-resident="${resident.id}" data-job="${item.id}" class="${item.id === resident.job ? "selected" : ""}">${item.name}</button>`).join("")}
       </div>
+      <select class="resident-home" data-home-resident="${resident.id}" aria-label="${resident.name}的居所">
+        ${homeOptions(resident)}
+      </select>
       <div class="resident-output">当前：${job.name}</div>
     </div>`;
   }).join("");
@@ -144,6 +163,7 @@ function handleMapClick(tile) {
     }
     renderer.setSelectedTile(tile);
     updateResources();
+    updateSimulationUI();
     persistGame(`已建造 ${result.building.name} · 已自动保存`);
     renderer.render(viewport.width, viewport.height);
     return;
@@ -160,6 +180,7 @@ function handleMapClick(tile) {
     });
     if (result.ok) {
       updateResources();
+      updateSimulationUI();
       persistGame(`已拆除 ${result.building.name}，返还 50% 材料 · 已自动保存`);
       renderer.render(viewport.width, viewport.height);
     }
@@ -210,6 +231,19 @@ residentPanel.addEventListener("click", (event) => {
     updateSimulationUI();
     persistGame(`${result.resident.name} 已转为${JOB_DEFINITIONS[result.resident.job].name}`);
   }
+});
+
+residentPanel.addEventListener("change", (event) => {
+  const select = event.target.closest("[data-home-resident]");
+  if (!select) return;
+  const result = assignResidentHome(gameState, select.dataset.homeResident, select.value || null);
+  if (!result.ok) {
+    updateSimulationUI();
+    status.textContent = REASONS[result.reason] ?? "无法安排居所";
+    return;
+  }
+  updateSimulationUI();
+  persistGame(result.building ? `${result.resident.name} 已入住 ${result.building.name}` : `${result.resident.name} 暂无居所`);
 });
 
 document.querySelectorAll(".build-button").forEach((button) => {
