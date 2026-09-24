@@ -1,16 +1,22 @@
+import { KAIRO_VISUAL_SCALE } from "./visual-scale.js";
+
 export class IsoCamera {
-  constructor({ tileWidth = 48, tileHeight = 24 } = {}) {
+  constructor({
+    tileWidth = KAIRO_VISUAL_SCALE.tileWidth,
+    tileHeight = KAIRO_VISUAL_SCALE.tileHeight,
+    zoom = KAIRO_VISUAL_SCALE.defaultZoom,
+  } = {}) {
     this.tileWidth = tileWidth;
     this.tileHeight = tileHeight;
-    this.zoom = 1;
+    this.zoom = zoom;
     this.originX = 0;
     this.originY = 0;
   }
 
   setViewport(width, height, worldX = 64, worldY = 64) {
     const center = this.worldToScreen(worldX, worldY);
-    this.originX += width / 2 - center.x;
-    this.originY += height / 2 - center.y;
+    this.originX += width * 0.45 - center.x;
+    this.originY += height * 0.54 - center.y;
   }
 
   worldToScreen(x, y) {
@@ -36,7 +42,10 @@ export class IsoCamera {
 
   zoomAt(factor, screenX, screenY) {
     const before = this.screenToWorld(screenX, screenY);
-    this.zoom = Math.min(2.5, Math.max(0.35, this.zoom * factor));
+    this.zoom = Math.min(
+      KAIRO_VISUAL_SCALE.maxZoom,
+      Math.max(KAIRO_VISUAL_SCALE.minZoom, this.zoom * factor),
+    );
     const after = this.worldToScreen(before.x, before.y);
     this.originX += screenX - after.x;
     this.originY += screenY - after.y;
