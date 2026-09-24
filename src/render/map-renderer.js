@@ -84,6 +84,7 @@ export class MapRenderer {
       }
     }
 
+    this.drawRoads(ctx);
     this.drawWorldObjects(ctx);
     this.drawPreview(ctx);
   }
@@ -122,10 +123,55 @@ export class MapRenderer {
     }
   }
 
+  drawRoads(ctx) {
+    if (!this.gameState) return;
+    const roads = this.gameState.buildings
+      .filter((building) => building.typeId === "road")
+      .sort((a, b) => a.x + a.y - b.x - b.y);
+    const roadKeys = new Set(roads.map((road) => `${road.x},${road.y}`));
+
+    for (const road of roads) {
+      const points = this.tileDiamond(road.x, road.y);
+      this.traceDiamond(ctx, points);
+      ctx.fillStyle = "#a79b7d";
+      ctx.fill();
+      ctx.strokeStyle = "#6f6857";
+      ctx.lineWidth = Math.max(0.8, this.camera.zoom);
+      ctx.stroke();
+
+      const center = this.camera.worldToScreen(road.x + 0.5, road.y + 0.5);
+      for (const direction of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
+        if (!roadKeys.has(`${road.x + direction.x},${road.y + direction.y}`)) continue;
+        const neighbor = this.camera.worldToScreen(
+          road.x + 0.5 + direction.x * 0.5,
+          road.y + 0.5 + direction.y * 0.5,
+        );
+        ctx.strokeStyle = "#d0c5a2";
+        ctx.lineWidth = Math.max(2, 5 * this.camera.zoom);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(neighbor.x, neighbor.y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#d8ccaa";
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y, Math.max(2, 4 * this.camera.zoom), Math.max(1, 2 * this.camera.zoom), 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (this.selectedTile?.buildingId === road.id) {
+        this.traceDiamond(ctx, points);
+        ctx.strokeStyle = COLORS.selected;
+        ctx.lineWidth = Math.max(1.5, this.camera.zoom * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
   drawWorldObjects(ctx) {
     if (!this.gameState) return;
     const objects = [
-      ...this.gameState.buildings.map((building) => ({
+      ...this.gameState.buildings.filter((building) => building.typeId !== "road").map((building) => ({
         kind: "building",
         depth: building.x + building.y + (building.width + building.height) / 2 + 0.25,
         value: building,
