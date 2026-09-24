@@ -29,6 +29,7 @@ export function ensureResidentWorkState(state) {
     resident.workplaceBuildingId ??= null;
     resident.activity ??= "idle";
     resident.position ??= { x: 63.5 + index * 0.65, y: 65.2 };
+    resident.facing ??= "right";
     const workplace = state.buildings.find((building) => building.id === resident.workplaceBuildingId);
     if (resident.workplaceBuildingId && (!workplace || !isCompatible(workplace, resident.job))) {
       resident.workplaceBuildingId = null;
@@ -69,18 +70,22 @@ export function clearIncompatibleWorkplace(state, resident) {
   }
 }
 
-function moveToward(position, target, distance) {
+function moveResidentToward(resident, target, distance) {
+  const position = resident.position;
   const dx = target.x - position.x;
   const dy = target.y - position.y;
   const length = Math.hypot(dx, dy);
-  if (length <= distance || length < 0.001) return { position: { ...target }, arrived: true };
-  return {
-    position: {
-      x: position.x + dx / length * distance,
-      y: position.y + dy / length * distance,
-    },
-    arrived: false,
-  };
+  const arrived = length <= distance || length < 0.001;
+  const nextPosition = arrived
+    ? { ...target }
+    : {
+        x: position.x + dx / length * distance,
+        y: position.y + dy / length * distance,
+      };
+  const screenDeltaX = (nextPosition.x - position.x) - (nextPosition.y - position.y);
+  if (Math.abs(screenDeltaX) > 0.001) resident.facing = screenDeltaX < 0 ? "left" : "right";
+  resident.position = nextPosition;
+  return { position: nextPosition, arrived };
 }
 
 export function updateResidentWork(state, minutes) {
@@ -96,8 +101,7 @@ export function updateResidentWork(state, minutes) {
     if (resident.energy <= 0) {
       resident.activity = "exhausted";
       if (!home) return;
-      const movement = moveToward(resident.position, getBuildingCenter(home, index), stepDistance);
-      resident.position = movement.position;
+      const movement = moveResidentToward(resident, getBuildingCenter(home, index), stepDistance);
       if (movement.arrived) resident.activity = "resting";
       return;
     }
@@ -108,8 +112,7 @@ export function updateResidentWork(state, minutes) {
         resident.activity = "waiting_workplace";
         return;
       }
-      const movement = moveToward(resident.position, getBuildingCenter(workplace, index), stepDistance);
-      resident.position = movement.position;
+      const movement = moveResidentToward(resident, getBuildingCenter(workplace, index), stepDistance);
       resident.activity = movement.arrived ? "working" : "walking_to_work";
       return;
     }
@@ -118,7 +121,7 @@ export function updateResidentWork(state, minutes) {
       resident.activity = "waiting_home";
       return;
     }
-    const movement = moveToward(resident.position, getBuildingCenter(home, index), stepDistance);
+    const movement = moveResidentToward(resident, getBuildingCenter(home, index), stepDistance);
     resident.position = movement.position;
     resident.activity = movement.arrived ? "resting" : "walking_home";
   });
