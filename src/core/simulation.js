@@ -1,4 +1,5 @@
 import { getBuildingDefinition } from "../building/building-definitions.js";
+import { clearIncompatibleWorkplace, ensureResidentWorkState, getActiveWorkers, updateResidentWork } from "./resident-work.js";
 import { JOB_DEFINITIONS, createInitialResidents } from "../residents/resident-definitions.js";
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -24,6 +25,7 @@ export function ensureSimulationState(state) {
     resident.energy ??= 100;
     resident.mood ??= 80;
   }
+  ensureResidentWorkState(state);
   return state;
 }
 
@@ -98,12 +100,9 @@ export function setResidentJob(state, residentId, jobId) {
   const resident = state.residents.find((item) => item.id === residentId);
   if (!resident || !JOB_DEFINITIONS[jobId]) return { ok: false, reason: "resident_or_job_not_found" };
   resident.job = jobId;
+  clearIncompatibleWorkplace(state, resident);
   resident.mood = Math.min(100, resident.mood + 2);
   return { ok: true, resident };
-}
-
-function countWorkingResidents(state, jobId) {
-  return state.residents.filter((resident) => resident.job === jobId && resident.energy > 0).length;
 }
 
 function countBuildings(state, typeId) {
@@ -114,12 +113,11 @@ export function advanceSimulation(state, minutes = 10) {
   ensureSimulationState(state);
   if (state.paused || minutes <= 0) return { food: 0, materials: 0, incense: 0 };
 
+  updateResidentWork(state, minutes);
   const hours = minutes / 60;
-  const farms = countBuildings(state, "farm");
-  const workshops = countBuildings(state, "workshop");
-  const farmers = Math.min(countWorkingResidents(state, "farmer"), farms);
-  const artisans = Math.min(countWorkingResidents(state, "artisan"), workshops);
-  const stewards = countWorkingResidents(state, "steward");
+  const farmers = Math.min(getActiveWorkers(state, "farmer").length, countBuildings(state, "farm"));
+  const artisans = Math.min(getActiveWorkers(state, "artisan").length, countBuildings(state, "workshop"));
+  const stewards = getActiveWorkers(state, "steward").length;
   const effects = getSettlementEffects(state);
 
   const produced = {
@@ -135,7 +133,13 @@ export function advanceSimulation(state, minutes = 10) {
 
   const validHomes = new Set(getHousingSummary(state).residences.map((building) => building.id));
   for (const resident of state.residents) {
-    resident.energy = Math.max(0, resident.energy - minutes * 0.04);
+    if (resident.activity === "working") {
+      resident.energy = Math.max(0, resident.energy - minutes * 0.055);
+    } else if (resident.activity === "resting") {
+      resident.energy = Math.min(100, resident.energy + minutes * 0.08);
+    } else if (resident.activity.startsWith("walking")) {
+      resident.energy = Math.max(0, resident.energy - minutes * 0.025);
+    }
     const housed = validHomes.has(resident.homeBuildingId);
     if (!housed) {
       resident.mood = Math.max(0, resident.mood - 0.35);
@@ -150,7 +154,7 @@ export function advanceSimulation(state, minutes = 10) {
   while (state.timeMinutes >= MINUTES_PER_DAY) {
     state.timeMinutes -= MINUTES_PER_DAY;
     state.day += 1;
-    for (const resident of state.residents) resident.energy = Math.min(100, resident.energy + 35);
+    for (const resident of state.residents) resident.energy = Math.min(100, resident.energy + 20);
   }
   return { ...produced, foodConsumed };
 }
