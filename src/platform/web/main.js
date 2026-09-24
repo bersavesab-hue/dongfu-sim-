@@ -23,6 +23,7 @@ const gameState = loadGameState(map, window.localStorage);
 let viewport = { width: window.innerWidth, height: window.innerHeight };
 let pointer = { active: false, moved: false, x: 0, y: 0 };
 let roadGesture = { active: false, cells: [] };
+let demolishGesture = { active: false, cells: [], buildingIds: [] };
 let mode = "inspect";
 let selectedBuildingType = null;
 let rotation = 0;
@@ -42,6 +43,7 @@ const REASONS = Object.freeze({
   workplace_incompatible: "该建筑不适合当前职业",
   workplace_full: "该工作建筑已满员",
   no_new_road: "拖动范围内没有新道路",
+  road_not_found: "拖动范围内没有道路",
 });
 
 function resize() {
@@ -165,7 +167,9 @@ function setMode(nextMode, typeId = null) {
   document.querySelector("#demolish-button").classList.toggle("active", nextMode === "demolish");
   renderer.setBuildPreview(null, null);
   renderer.setRoadPreview([]);
+  renderer.setDemolishPreview([]);
   roadGesture = { active: false, cells: [] };
+  demolishGesture = { active: false, cells: [], buildingIds: [] };
   status.textContent = nextMode === "build"
     ? `选择地图位置放置 ${getBuildingDefinition(typeId).name}`
     : nextMode === "demolish"
@@ -174,29 +178,72 @@ function setMode(nextMode, typeId = null) {
   renderer.render(viewport.width, viewport.height);
 }
 
-function appendRoadSegment(tile) {
+function appendGridSegment(cells, tile) {
   if (!tile) return;
-  const cells = roadGesture.cells;
   const last = cells[cells.length - 1];
   if (!last) {
     cells.push({ x: tile.x, y: tile.y });
-  } else {
-    let x = last.x;
-    let y = last.y;
-    while (x !== tile.x) {
-      x += Math.sign(tile.x - x);
-      if (!cells.some((cell) => cell.x === x && cell.y === y)) cells.push({ x, y });
-    }
-    while (y !== tile.y) {
-      y += Math.sign(tile.y - y);
-      if (!cells.some((cell) => cell.x === x && cell.y === y)) cells.push({ x, y });
-    }
+    return;
   }
+  let x = last.x;
+  let y = last.y;
+  while (x !== tile.x) {
+    x += Math.sign(tile.x - x);
+    if (!cells.some((cell) => cell.x === x && cell.y === y)) cells.push({ x, y });
+  }
+  while (y !== tile.y) {
+    y += Math.sign(tile.y - y);
+    if (!cells.some((cell) => cell.x === x && cell.y === y)) cells.push({ x, y });
+  }
+}
+
+function appendRoadSegment(tile) {
+  if (!tile) return;
+  const cells = roadGesture.cells;
+  appendGridSegment(cells, tile);
   const check = canPlaceRoadBatch(gameState, cells);
   renderer.setRoadPreview(cells, check.ok);
   status.textContent = check.ok
     ? `青石路 ${check.cells.length} 格 · 消耗 ${check.cost} 材料 · 松手铺设`
     : REASONS[check.reason] ?? "该路线无法铺设";
+  renderer.render(viewport.width, viewport.height);
+}
+
+function appendDemolishSegment(tile) {
+  if (!tile) return;
+  appendGridSegment(demolishGesture.cells, tile);
+  const roads = demolishGesture.cells
+    .map((cell) => gameState.buildings.find((building) => (
+      building.id === map.tiles[cell.y * map.width + cell.x]?.buildingId
+    )))
+    .filter((building) => building?.typeId === "road");
+  demolishGesture.buildingIds = [...new Set(roads.map((road) => road.id))];
+  const previewCells = demolishGesture.buildingIds.map((id) => {
+    const road = gameState.buildings.find((building) => building.id === id);
+    return { x: road.x, y: road.y };
+  });
+  renderer.setDemolishPreview(previewCells);
+  status.textContent = previewCells.length
+    ? `已选择 ${previewCells.length} 格道路 · 松手拆除`
+    : "拖动经过需要拆除的道路";
+  renderer.render(viewport.width, viewport.height);
+}
+
+function commitDemolishGesture() {
+  const result = executeBuildingCommand(gameState, {
+    type: "DemolishRoadBatch",
+    buildingIds: demolishGesture.buildingIds,
+  });
+  renderer.setDemolishPreview([]);
+  demolishGesture = { active: false, cells: [], buildingIds: [] };
+  if (!result.ok) {
+    status.textContent = REASONS[result.reason] ?? "道路拆除失败";
+    renderer.render(viewport.width, viewport.height);
+    return;
+  }
+  enforceResourceLimits(gameState);
+  updateResources();
+  persistGame(`已拆除 ${result.roads.length} 格青石路，返还 ${result.refunded} 材料 · 已自动保存`);
   renderer.render(viewport.width, viewport.height);
 }
 
@@ -270,6 +317,15 @@ canvas.addEventListener("pointerdown", (event) => {
   if (mode === "build" && selectedBuildingType === "road") {
     roadGesture = { active: true, cells: [] };
     appendRoadSegment(pickTile(event.clientX, event.clientY));
+    return;
+  }
+  const tile = pickTile(event.clientX, event.clientY);
+  const building = tile?.buildingId
+    ? gameState.buildings.find((item) => item.id === tile.buildingId)
+    : null;
+  if (mode === "demolish" && building?.typeId === "road") {
+    demolishGesture = { active: true, cells: [], buildingIds: [] };
+    appendDemolishSegment(tile);
   }
 });
 
@@ -278,6 +334,11 @@ canvas.addEventListener("pointermove", (event) => {
   if (roadGesture.active) {
     pointer.moved = true;
     appendRoadSegment(pickTile(event.clientX, event.clientY));
+    return;
+  }
+  if (demolishGesture.active) {
+    pointer.moved = true;
+    appendDemolishSegment(pickTile(event.clientX, event.clientY));
     return;
   }
   const dx = event.clientX - pointer.x;
@@ -295,13 +356,20 @@ canvas.addEventListener("pointerup", (event) => {
     pointer.active = false;
     return;
   }
+  if (demolishGesture.active) {
+    commitDemolishGesture();
+    pointer.active = false;
+    return;
+  }
   if (!pointer.moved) handleMapClick(pickTile(event.clientX, event.clientY));
   pointer.active = false;
 });
 
 canvas.addEventListener("pointercancel", () => {
   renderer.setRoadPreview([]);
+  renderer.setDemolishPreview([]);
   roadGesture = { active: false, cells: [] };
+  demolishGesture = { active: false, cells: [], buildingIds: [] };
   pointer.active = false;
 });
 

@@ -151,3 +151,22 @@ export function demolishBuilding(state, buildingId) {
   releaseResources(state.resources, definition.cost);
   return { ok: true, building };
 }
+
+export function demolishRoadBatch(state, buildingIds) {
+  const uniqueIds = [...new Set(buildingIds ?? [])];
+  const roads = uniqueIds
+    .map((id) => state.buildings.find((building) => building.id === id))
+    .filter((building) => building?.typeId === "road");
+  if (roads.length === 0) return { ok: false, reason: "road_not_found" };
+
+  const definition = getBuildingDefinition("road");
+  const refunded = Math.floor(roads.length * (definition.cost.materials ?? 0) * 0.5);
+  for (const road of roads) {
+    const tile = state.map.tiles[road.y * state.map.width + road.x];
+    if (tile?.buildingId === road.id) tile.buildingId = null;
+  }
+  const removedIds = new Set(roads.map((road) => road.id));
+  state.buildings = state.buildings.filter((building) => !removedIds.has(building.id));
+  state.resources.materials += refunded;
+  return { ok: true, roads, refunded };
+}

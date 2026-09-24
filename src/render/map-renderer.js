@@ -1,5 +1,6 @@
 import { BUILDING_MODEL_FRAMES, MODEL_ATLAS_URL, MODEL_CELL_SIZE, RESIDENT_MODEL_FRAMES } from "./model-atlas.js";
 import { KAIRO_VISUAL_SCALE, getBuildingRenderProfile } from "./visual-scale.js";
+import { getRoadTopology } from "./road-topology.js";
 
 const COLORS = Object.freeze({
   background: "#13202a",
@@ -27,6 +28,7 @@ export class MapRenderer {
     this.previewRotation = 0;
     this.roadPreview = [];
     this.roadPreviewValid = true;
+    this.demolishPreview = [];
     this.modelAtlas = new Image();
     this.modelAtlasReady = false;
     this.modelAtlas.addEventListener("load", () => {
@@ -56,6 +58,10 @@ export class MapRenderer {
   setRoadPreview(cells = [], valid = true) {
     this.roadPreview = cells;
     this.roadPreviewValid = valid;
+  }
+
+  setDemolishPreview(cells = []) {
+    this.demolishPreview = cells;
   }
 
   resize(width, height, pixelRatio = 1) {
@@ -96,6 +102,7 @@ export class MapRenderer {
     this.drawWorldObjects(ctx);
     this.drawPreview(ctx);
     this.drawRoadPreview(ctx);
+    this.drawDemolishPreview(ctx);
   }
 
   tileDiamond(x, y, width = 1, height = 1) {
@@ -140,33 +147,56 @@ export class MapRenderer {
     const roadKeys = new Set(roads.map((road) => `${road.x},${road.y}`));
 
     for (const road of roads) {
+      const topology = getRoadTopology(roadKeys, road.x, road.y);
       const points = this.tileDiamond(road.x, road.y);
       this.traceDiamond(ctx, points);
-      ctx.fillStyle = "#a79b7d";
+      ctx.fillStyle = "#746b58";
       ctx.fill();
-      ctx.strokeStyle = "#6f6857";
+      ctx.strokeStyle = "#514b40";
       ctx.lineWidth = Math.max(0.8, this.camera.zoom);
       ctx.stroke();
 
       const center = this.camera.worldToScreen(road.x + 0.5, road.y + 0.5);
-      for (const direction of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
-        if (!roadKeys.has(`${road.x + direction.x},${road.y + direction.y}`)) continue;
+      for (const direction of topology.connections) {
         const neighbor = this.camera.worldToScreen(
           road.x + 0.5 + direction.x * 0.5,
           road.y + 0.5 + direction.y * 0.5,
         );
-        ctx.strokeStyle = "#d0c5a2";
-        ctx.lineWidth = Math.max(2, 5 * this.camera.zoom);
+        ctx.strokeStyle = "#4f493d";
+        ctx.lineWidth = Math.max(4, 12 * this.camera.zoom);
         ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(center.x, center.y);
         ctx.lineTo(neighbor.x, neighbor.y);
         ctx.stroke();
+
+        ctx.strokeStyle = "#bbae8d";
+        ctx.lineWidth = Math.max(2.5, 8 * this.camera.zoom);
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(neighbor.x, neighbor.y);
+        ctx.stroke();
       }
-      ctx.fillStyle = "#d8ccaa";
+      const hubScale = topology.kind === "cross" ? 1.35 : topology.kind === "tee" ? 1.18 : 1;
+      ctx.fillStyle = "#c9bc9a";
       ctx.beginPath();
-      ctx.ellipse(center.x, center.y, Math.max(2, 4 * this.camera.zoom), Math.max(1, 2 * this.camera.zoom), 0, 0, Math.PI * 2);
+      ctx.ellipse(
+        center.x,
+        center.y,
+        Math.max(3, 7 * this.camera.zoom * hubScale),
+        Math.max(1.5, 3.5 * this.camera.zoom * hubScale),
+        0,
+        0,
+        Math.PI * 2,
+      );
       ctx.fill();
+
+      ctx.strokeStyle = "rgba(83,76,61,0.55)";
+      ctx.lineWidth = Math.max(0.7, this.camera.zoom);
+      ctx.beginPath();
+      ctx.moveTo(center.x - 5 * this.camera.zoom, center.y);
+      ctx.lineTo(center.x + 5 * this.camera.zoom, center.y);
+      ctx.stroke();
 
       if (this.selectedTile?.buildingId === road.id) {
         this.traceDiamond(ctx, points);
@@ -410,6 +440,30 @@ export class MapRenderer {
       ctx.globalAlpha = 1;
       ctx.strokeStyle = color;
       ctx.lineWidth = Math.max(1.5, 2 * this.camera.zoom);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawDemolishPreview(ctx) {
+    if (!this.demolishPreview.length) return;
+    ctx.save();
+    for (const cell of this.demolishPreview) {
+      const points = this.tileDiamond(cell.x, cell.y);
+      this.traceDiamond(ctx, points);
+      ctx.fillStyle = COLORS.previewInvalid;
+      ctx.globalAlpha = 0.42;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = COLORS.previewInvalid;
+      ctx.lineWidth = Math.max(1.5, 2 * this.camera.zoom);
+      ctx.stroke();
+      const center = this.camera.worldToScreen(cell.x + 0.5, cell.y + 0.5);
+      ctx.beginPath();
+      ctx.moveTo(center.x - 5 * this.camera.zoom, center.y - 3 * this.camera.zoom);
+      ctx.lineTo(center.x + 5 * this.camera.zoom, center.y + 3 * this.camera.zoom);
+      ctx.moveTo(center.x + 5 * this.camera.zoom, center.y - 3 * this.camera.zoom);
+      ctx.lineTo(center.x - 5 * this.camera.zoom, center.y + 3 * this.camera.zoom);
       ctx.stroke();
     }
     ctx.restore();
