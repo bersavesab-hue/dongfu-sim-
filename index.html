@@ -44,6 +44,63 @@
       button.active, .resident-jobs button.selected { border-color: #f8d477; background: #5d4d2e; }
       .resident-jobs button { padding: 4px 6px; font-size: 11px; }
       #cancel-button, #rotate-button, #pause-button { text-align: center; }
+      @media (max-width: 700px) {
+        #resources, #time-display, #status {
+          left: max(8px, env(safe-area-inset-left));
+          right: max(8px, env(safe-area-inset-right));
+          border-radius: 8px;
+          font-size: 12px;
+        }
+        #resources {
+          top: max(8px, env(safe-area-inset-top));
+          min-width: 0;
+          padding: 8px 10px;
+          text-align: center;
+        }
+        #time-display {
+          top: calc(max(8px, env(safe-area-inset-top)) + 38px);
+          right: auto;
+          min-width: 0;
+          padding: 7px 10px;
+        }
+        #build-toolbar {
+          top: auto;
+          left: max(8px, env(safe-area-inset-left));
+          right: max(8px, env(safe-area-inset-right));
+          bottom: calc(max(8px, env(safe-area-inset-bottom)) + 42px);
+          width: auto;
+          display: flex;
+          gap: 5px;
+          overflow-x: auto;
+          padding: 3px 0;
+          scrollbar-width: none;
+        }
+        #build-toolbar::-webkit-scrollbar { display: none; }
+        #build-toolbar button {
+          flex: 0 0 auto;
+          min-height: 38px;
+          padding: 7px 9px;
+          font-size: 11px;
+          white-space: nowrap;
+          background: rgba(8,14,22,.94);
+        }
+        #resident-panel {
+          top: calc(max(8px, env(safe-area-inset-top)) + 76px);
+          right: max(8px, env(safe-area-inset-right));
+          bottom: calc(max(8px, env(safe-area-inset-bottom)) + 94px);
+          width: min(232px, 62vw);
+          max-height: none;
+          padding: 6px;
+          background: rgba(8,14,22,.86);
+        }
+        .resident-card { padding: 6px 4px; }
+        .resident-home { padding: 5px; }
+        #status {
+          bottom: max(8px, env(safe-area-inset-bottom));
+          padding: 7px 10px;
+          text-align: center;
+        }
+      }
     </style>
   </head>
   <body>
