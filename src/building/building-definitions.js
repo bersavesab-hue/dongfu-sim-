@@ -1,4 +1,13 @@
 export const BUILDING_DEFINITIONS = Object.freeze({
+  road: Object.freeze({
+    id: "road",
+    name: "青石路",
+    width: 1,
+    height: 1,
+    cost: { materials: 1 },
+    color: "#a89d7f",
+    isRoad: true,
+  }),
   residence: Object.freeze({
     id: "residence",
     name: "居所",
@@ -55,6 +64,7 @@ export const BUILDING_DEFINITIONS = Object.freeze({
 });
 
 export const BUILDING_ORDER = Object.freeze([
+  "road",
   "residence",
   "farm",
   "workshop",
