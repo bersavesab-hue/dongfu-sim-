@@ -9,6 +9,7 @@ const COLORS = Object.freeze({
   buildableAlt: "#9d8750",
   selected: "#ffd96a",
   preview: "#9ee493",
+  previewInvalid: "#ef756f",
   border: "rgba(236,244,228,0.08)",
   text: "#f4f3df",
 });
@@ -24,6 +25,8 @@ export class MapRenderer {
     this.previewTile = null;
     this.previewDefinition = null;
     this.previewRotation = 0;
+    this.roadPreview = [];
+    this.roadPreviewValid = true;
     this.modelAtlas = new Image();
     this.modelAtlasReady = false;
     this.modelAtlas.addEventListener("load", () => {
@@ -48,6 +51,11 @@ export class MapRenderer {
     this.previewTile = tile;
     this.previewDefinition = definition;
     this.previewRotation = rotation;
+  }
+
+  setRoadPreview(cells = [], valid = true) {
+    this.roadPreview = cells;
+    this.roadPreviewValid = valid;
   }
 
   resize(width, height, pixelRatio = 1) {
@@ -87,6 +95,7 @@ export class MapRenderer {
     this.drawRoads(ctx);
     this.drawWorldObjects(ctx);
     this.drawPreview(ctx);
+    this.drawRoadPreview(ctx);
   }
 
   tileDiamond(x, y, width = 1, height = 1) {
@@ -384,6 +393,25 @@ export class MapRenderer {
       placement.size,
       placement.size,
     );
+    ctx.restore();
+  }
+
+
+  drawRoadPreview(ctx) {
+    if (!this.roadPreview.length) return;
+    const color = this.roadPreviewValid ? COLORS.preview : COLORS.previewInvalid;
+    ctx.save();
+    for (const cell of this.roadPreview) {
+      const points = this.tileDiamond(cell.x, cell.y);
+      this.traceDiamond(ctx, points);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.42;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1.5, 2 * this.camera.zoom);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }

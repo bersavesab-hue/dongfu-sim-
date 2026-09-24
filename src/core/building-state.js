@@ -80,6 +80,61 @@ export function placeBuilding(state, typeId, x, y, rotation = 0) {
   return { ok: true, building };
 }
 
+export function canPlaceRoadBatch(state, cells) {
+  const definition = getBuildingDefinition("road");
+  const uniqueCells = [];
+  const seen = new Set();
+
+  for (const cell of cells ?? []) {
+    const key = `${cell.x},${cell.y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!isInsideMap(cell.x, cell.y)) return { ok: false, reason: "outside_map" };
+    const tile = state.map.tiles[cell.y * state.map.width + cell.x];
+    if (!tile.buildable) return { ok: false, reason: "not_buildable" };
+    if (tile.buildingId) {
+      const existing = state.buildings.find((building) => building.id === tile.buildingId);
+      if (existing?.typeId === "road") continue;
+      return { ok: false, reason: "occupied" };
+    }
+    uniqueCells.push({ x: cell.x, y: cell.y });
+  }
+
+  if (uniqueCells.length === 0) return { ok: false, reason: "no_new_road" };
+  const cost = uniqueCells.length * (definition.cost.materials ?? 0);
+  if ((state.resources.materials ?? 0) < cost) {
+    return { ok: false, reason: "insufficient_resources", cells: uniqueCells, cost };
+  }
+  return { ok: true, cells: uniqueCells, cost, definition };
+}
+
+export function placeRoadBatch(state, cells) {
+  const check = canPlaceRoadBatch(state, cells);
+  if (!check.ok) return check;
+  const roads = [];
+  state.resources.materials -= check.cost;
+
+  for (const cell of check.cells) {
+    const id = `building-${state.nextBuildingNumber}`;
+    state.nextBuildingNumber += 1;
+    const road = {
+      id,
+      typeId: "road",
+      name: check.definition.name,
+      color: check.definition.color,
+      x: cell.x,
+      y: cell.y,
+      rotation: 0,
+      width: 1,
+      height: 1,
+    };
+    state.buildings.push(road);
+    state.map.tiles[cell.y * state.map.width + cell.x].buildingId = id;
+    roads.push(road);
+  }
+  return { ok: true, roads, cost: check.cost };
+}
+
 export function demolishBuilding(state, buildingId) {
   const index = state.buildings.findIndex((building) => building.id === buildingId);
   if (index < 0) return { ok: false, reason: "building_not_found" };

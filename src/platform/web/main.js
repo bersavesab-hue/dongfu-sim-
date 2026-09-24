@@ -1,5 +1,5 @@
 import { getBuildingDefinition } from "../../building/building-definitions.js";
-import { createBuildingState, canPlaceBuilding } from "../../core/building-state.js";
+import { createBuildingState, canPlaceBuilding, canPlaceRoadBatch } from "../../core/building-state.js";
 import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
@@ -22,6 +22,7 @@ const gameState = loadGameState(map, window.localStorage);
 
 let viewport = { width: window.innerWidth, height: window.innerHeight };
 let pointer = { active: false, moved: false, x: 0, y: 0 };
+let roadGesture = { active: false, cells: [] };
 let mode = "inspect";
 let selectedBuildingType = null;
 let rotation = 0;
@@ -40,6 +41,7 @@ const REASONS = Object.freeze({
   workplace_not_found: "工作建筑不存在",
   workplace_incompatible: "该建筑不适合当前职业",
   workplace_full: "该工作建筑已满员",
+  no_new_road: "拖动范围内没有新道路",
 });
 
 function resize() {
@@ -149,7 +151,7 @@ function pickTile(clientX, clientY) {
 function refreshPreview(clientX, clientY) {
   const tile = pickTile(clientX, clientY);
   const definition = selectedBuildingType ? getBuildingDefinition(selectedBuildingType) : null;
-  renderer.setBuildPreview(mode === "build" ? tile : null, definition, rotation);
+  renderer.setBuildPreview(mode === "build" && selectedBuildingType !== "road" ? tile : null, definition, rotation);
   updateStatus(tile);
   renderer.render(viewport.width, viewport.height);
 }
@@ -162,11 +164,56 @@ function setMode(nextMode, typeId = null) {
   });
   document.querySelector("#demolish-button").classList.toggle("active", nextMode === "demolish");
   renderer.setBuildPreview(null, null);
+  renderer.setRoadPreview([]);
+  roadGesture = { active: false, cells: [] };
   status.textContent = nextMode === "build"
     ? `选择地图位置放置 ${getBuildingDefinition(typeId).name}`
     : nextMode === "demolish"
       ? "选择要拆除的建筑"
       : "点击地图查看格子";
+  renderer.render(viewport.width, viewport.height);
+}
+
+function appendRoadSegment(tile) {
+  if (!tile) return;
+  const cells = roadGesture.cells;
+  const last = cells[cells.length - 1];
+  if (!last) {
+    cells.push({ x: tile.x, y: tile.y });
+  } else {
+    let x = last.x;
+    let y = last.y;
+    while (x !== tile.x) {
+      x += Math.sign(tile.x - x);
+      if (!cells.some((cell) => cell.x === x && cell.y === y)) cells.push({ x, y });
+    }
+    while (y !== tile.y) {
+      y += Math.sign(tile.y - y);
+      if (!cells.some((cell) => cell.x === x && cell.y === y)) cells.push({ x, y });
+    }
+  }
+  const check = canPlaceRoadBatch(gameState, cells);
+  renderer.setRoadPreview(cells, check.ok);
+  status.textContent = check.ok
+    ? `青石路 ${check.cells.length} 格 · 消耗 ${check.cost} 材料 · 松手铺设`
+    : REASONS[check.reason] ?? "该路线无法铺设";
+  renderer.render(viewport.width, viewport.height);
+}
+
+function commitRoadGesture() {
+  const result = executeBuildingCommand(gameState, {
+    type: "PlaceRoadBatch",
+    cells: roadGesture.cells,
+  });
+  renderer.setRoadPreview([]);
+  roadGesture = { active: false, cells: [] };
+  if (!result.ok) {
+    status.textContent = REASONS[result.reason] ?? "道路铺设失败";
+    renderer.render(viewport.width, viewport.height);
+    return;
+  }
+  updateResources();
+  persistGame(`已铺设 ${result.roads.length} 格青石路，消耗 ${result.cost} 材料 · 已自动保存`);
   renderer.render(viewport.width, viewport.height);
 }
 
@@ -220,10 +267,19 @@ function handleMapClick(tile) {
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
   pointer = { active: true, moved: false, x: event.clientX, y: event.clientY };
+  if (mode === "build" && selectedBuildingType === "road") {
+    roadGesture = { active: true, cells: [] };
+    appendRoadSegment(pickTile(event.clientX, event.clientY));
+  }
 });
 
 canvas.addEventListener("pointermove", (event) => {
   if (!pointer.active) return;
+  if (roadGesture.active) {
+    pointer.moved = true;
+    appendRoadSegment(pickTile(event.clientX, event.clientY));
+    return;
+  }
   const dx = event.clientX - pointer.x;
   const dy = event.clientY - pointer.y;
   if (Math.abs(dx) + Math.abs(dy) > 3) pointer.moved = true;
@@ -234,11 +290,18 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 canvas.addEventListener("pointerup", (event) => {
+  if (roadGesture.active) {
+    commitRoadGesture();
+    pointer.active = false;
+    return;
+  }
   if (!pointer.moved) handleMapClick(pickTile(event.clientX, event.clientY));
   pointer.active = false;
 });
 
 canvas.addEventListener("pointercancel", () => {
+  renderer.setRoadPreview([]);
+  roadGesture = { active: false, cells: [] };
   pointer.active = false;
 });
 
