@@ -98,6 +98,13 @@ export function assignResidentHome(state, residentId, buildingId) {
   resident.route = [];
   resident.routeIndex = 0;
   resident.routeTargetBuildingId = null;
+  if (["idle", "waiting_home", "waiting_workplace", "resting"].includes(resident.activity)) {
+    const index = state.residents.indexOf(resident);
+    resident.position = {
+      x: building.x + building.width / 2 + (index % 3 - 1) * 0.14,
+      y: building.y + building.height / 2 + 0.28,
+    };
+  }
   resident.mood = Math.min(100, resident.mood + 3);
   return { ok: true, resident, building };
 }
@@ -160,7 +167,6 @@ export function advanceSimulation(state, minutes = 10) {
   while (state.timeMinutes >= MINUTES_PER_DAY) {
     state.timeMinutes -= MINUTES_PER_DAY;
     state.day += 1;
-    for (const resident of state.residents) resident.energy = Math.min(100, resident.energy + 20);
   }
   return { ...produced, foodConsumed };
 }

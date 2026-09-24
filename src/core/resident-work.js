@@ -41,6 +41,8 @@ export function ensureResidentWorkState(state) {
     resident.route = Array.isArray(resident.route) ? resident.route : [];
     resident.routeIndex = Number.isInteger(resident.routeIndex) ? resident.routeIndex : 0;
     resident.routeTargetBuildingId ??= null;
+    const home = state.buildings.find((building) => building.id === resident.homeBuildingId && building.typeId === "residence");
+    if (home && resident.activity === "idle") resident.position = getBuildingCenter(home, index);
     const workplace = state.buildings.find((building) => building.id === resident.workplaceBuildingId);
     if (resident.workplaceBuildingId && (!workplace || !isCompatible(workplace, resident.job))) {
       resident.workplaceBuildingId = null;
@@ -191,7 +193,9 @@ export function updateResidentWork(state, minutes) {
       return;
     }
     if (!workplace) {
-      resident.position = getBuildingCenter(home, index);
+      if (resident.activity !== "resting" || resident.route.length) {
+        resident.position = getBuildingCenter(home, index);
+      }
       resident.activity = "resting";
       clearRoute(resident);
       return;

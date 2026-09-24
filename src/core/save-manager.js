@@ -33,15 +33,35 @@ export function loadGameState(map, storage) {
     const saved = JSON.parse(raw);
     if (saved.saveVersion !== SAVE_VERSION || !Array.isArray(saved.buildings)) return ensureSimulationState(state);
 
+    const occupied = new Set();
+    for (const building of saved.buildings) {
+      if (!building || typeof building.id !== "string"
+        || !Number.isInteger(building.x) || !Number.isInteger(building.y)
+        || !Number.isInteger(building.width) || !Number.isInteger(building.height)
+        || building.width < 1 || building.height < 1
+        || building.x < 0 || building.y < 0
+        || building.x + building.width > map.width || building.y + building.height > map.height) {
+        return ensureSimulationState(state);
+      }
+      for (let row = 0; row < building.height; row += 1) {
+        for (let column = 0; column < building.width; column += 1) {
+          const key = `${building.x + column},${building.y + row}`;
+          if (occupied.has(key)) return ensureSimulationState(state);
+          occupied.add(key);
+        }
+      }
+    }
+
     state.resources = {
       ...state.resources,
       ...(saved.resources ?? {}),
     };
     state.buildings = saved.buildings;
     state.residents = saved.residents;
-    state.day = saved.day;
-    state.timeMinutes = saved.timeMinutes;
-    state.paused = saved.paused;
+    state.day = Number.isInteger(saved.day) && saved.day > 0 ? saved.day : 1;
+    state.timeMinutes = Number.isFinite(saved.timeMinutes) && saved.timeMinutes >= 0
+      ? saved.timeMinutes % 1440 : 360;
+    state.paused = saved.paused === true;
     state.nextBuildingNumber = Math.max(
       Number(saved.nextBuildingNumber) || 1,
       ...state.buildings.map((building) => Number(building.id?.split("-").pop()) + 1 || 1),

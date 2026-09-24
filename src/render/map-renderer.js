@@ -306,7 +306,8 @@ export class MapRenderer {
 
     const size = KAIRO_VISUAL_SCALE.residentSpriteSize * this.camera.zoom;
     const walking = resident.activity?.startsWith("walking");
-    const bob = walking ? Math.sin(Date.now() / 130 + index) * 1.6 * this.camera.zoom : 0;
+    const bob = walking && !this.gameState.paused
+      ? Math.sin(Date.now() / 130 + index) * 1.6 * this.camera.zoom : 0;
 
     ctx.save();
     ctx.fillStyle = "rgba(4,10,12,0.3)";
@@ -379,6 +380,15 @@ export class MapRenderer {
         Math.PI * 2,
       );
       ctx.fill();
+      if (!this.gameState.paused) {
+        const pulse = Math.sin(Date.now() / 240 + index) * 2 * this.camera.zoom;
+        ctx.save();
+        ctx.font = `${Math.max(10, 13 * this.camera.zoom)}px system-ui`;
+        ctx.textAlign = "center";
+        ctx.fillText(resident.job === "farmer" ? "✿" : resident.job === "artisan" ? "✦" : "香",
+          point.x + size * 0.34, point.y - size * 0.7 + pulse);
+        ctx.restore();
+      }
     }
   }
 

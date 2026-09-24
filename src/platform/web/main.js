@@ -14,6 +14,7 @@ const status = document.querySelector("#status");
 const resources = document.querySelector("#resources");
 const timeDisplay = document.querySelector("#time-display");
 const residentPanel = document.querySelector("#resident-panel");
+const residentToggle = document.querySelector("#resident-toggle");
 const pauseButton = document.querySelector("#pause-button");
 const camera = new IsoCamera();
 const renderer = new MapRenderer(canvas, camera);
@@ -21,7 +22,9 @@ const map = createMapGrid();
 const gameState = loadGameState(map, window.localStorage);
 
 let viewport = { width: window.innerWidth, height: window.innerHeight };
-let pointer = { active: false, moved: false, x: 0, y: 0 };
+let pointer = { active: false, moved: false, id: null, x: 0, y: 0, startX: 0, startY: 0 };
+const activePointers = new Map();
+let pinchDistance = null;
 let roadGesture = { active: false, cells: [] };
 let demolishGesture = { active: false, cells: [], buildingIds: [] };
 let mode = "inspect";
@@ -57,9 +60,18 @@ function resize() {
 }
 
 function persistGame(message = "已保存") {
-  saveGameState(gameState, window.localStorage);
-  status.textContent = message;
+  try {
+    status.textContent = saveGameState(gameState, window.localStorage) ? message : "存档不可用";
+  } catch {
+    status.textContent = "保存失败，请检查设备存储空间";
+  }
 }
+
+residentToggle.addEventListener("click", () => {
+  residentPanel.hidden = !residentPanel.hidden;
+  residentToggle.setAttribute("aria-expanded", String(!residentPanel.hidden));
+  residentToggle.textContent = residentPanel.hidden ? "仙人 ▾" : "收起仙人 ▴";
+});
 
 function updateResources() {
   const limits = getResourceLimits(gameState);
@@ -313,7 +325,20 @@ function handleMapClick(tile) {
 
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
-  pointer = { active: true, moved: false, x: event.clientX, y: event.clientY };
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (activePointers.size > 1) {
+    const [a, b] = [...activePointers.values()];
+    pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+    pointer.moved = true;
+    roadGesture = { active: false, cells: [] };
+    demolishGesture = { active: false, cells: [], buildingIds: [] };
+    renderer.setRoadPreview([]);
+    renderer.setDemolishPreview([]);
+    renderer.render(viewport.width, viewport.height);
+    return;
+  }
+  pointer = { active: true, moved: false, id: event.pointerId,
+    x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY };
   if (mode === "build" && selectedBuildingType === "road") {
     roadGesture = { active: true, cells: [] };
     appendRoadSegment(pickTile(event.clientX, event.clientY));
@@ -330,7 +355,20 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  if (!pointer.active) return;
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (activePointers.size > 1) {
+    const [a, b] = [...activePointers.values()];
+    const distance = Math.hypot(a.x - b.x, a.y - b.y);
+    const centerX = (a.x + b.x) / 2;
+    const centerY = (a.y + b.y) / 2;
+    if (pinchDistance && distance > 0) camera.zoomAt(distance / pinchDistance, centerX, centerY);
+    pinchDistance = distance;
+    pointer.moved = true;
+    renderer.render(viewport.width, viewport.height);
+    return;
+  }
+  if (!pointer.active || pointer.id !== event.pointerId) return;
   if (roadGesture.active) {
     pointer.moved = true;
     appendRoadSegment(pickTile(event.clientX, event.clientY));
@@ -343,14 +381,22 @@ canvas.addEventListener("pointermove", (event) => {
   }
   const dx = event.clientX - pointer.x;
   const dy = event.clientY - pointer.y;
-  if (Math.abs(dx) + Math.abs(dy) > 3) pointer.moved = true;
-  camera.panBy(dx, dy);
+  if (Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) > 7) pointer.moved = true;
+  if (pointer.moved) camera.panBy(dx, dy);
   pointer.x = event.clientX;
   pointer.y = event.clientY;
   refreshPreview(event.clientX, event.clientY);
 });
 
 canvas.addEventListener("pointerup", (event) => {
+  const wasPinching = activePointers.size > 1;
+  activePointers.delete(event.pointerId);
+  if (wasPinching) {
+    pinchDistance = null;
+    pointer.active = false;
+    return;
+  }
+  if (!pointer.active || pointer.id !== event.pointerId) return;
   if (roadGesture.active) {
     commitRoadGesture();
     pointer.active = false;
@@ -366,6 +412,8 @@ canvas.addEventListener("pointerup", (event) => {
 });
 
 canvas.addEventListener("pointercancel", () => {
+  activePointers.clear();
+  pinchDistance = null;
   renderer.setRoadPreview([]);
   renderer.setDemolishPreview([]);
   roadGesture = { active: false, cells: [] };

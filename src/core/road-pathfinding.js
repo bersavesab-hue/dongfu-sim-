@@ -81,8 +81,15 @@ export function findRoadRoute(state, fromBuilding, toBuilding, currentPosition =
   const goals = getBuildingRoadEntries(state, toBuilding);
   if (roads.size === 0 || goals.length === 0) return null;
 
+  const buildingStarts = getBuildingRoadEntries(state, fromBuilding);
   const nearbyStart = findNearestRoadStart(roads, currentPosition);
-  const starts = nearbyStart ? [nearbyStart] : getBuildingRoadEntries(state, fromBuilding);
+  // A resident already walking can resume on a road. At a building, only its
+  // actual entrances are valid starts; a nearby unrelated road cannot connect it.
+  const nearRoad = nearbyStart && Math.hypot(
+    nearbyStart.x + 0.5 - currentPosition.x,
+    nearbyStart.y + 0.5 - currentPosition.y,
+  ) < 0.35;
+  const starts = nearRoad ? [nearbyStart] : buildingStarts;
   if (starts.length === 0) return null;
 
   const goalKeys = new Set(goals.map((point) => tileKey(point.x, point.y)));

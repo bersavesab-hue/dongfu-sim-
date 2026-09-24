@@ -28,6 +28,8 @@
         border: 1px solid rgba(255,255,255,.12); border-radius: 10px;
         background: rgba(8,14,22,.9);
       }
+      #resident-toggle { position: fixed; right: 16px; top: 59px; z-index: 2; }
+      #resident-panel[hidden] { display: none; }
       .resident-summary { color: #f8d477; font-size: 12px; padding: 4px 6px 8px; }
       .resident-card { padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,.1); }
       .resident-card:last-child { border-bottom: 0; }
@@ -85,13 +87,19 @@
           background: rgba(8,14,22,.94);
         }
         #resident-panel {
-          top: calc(max(8px, env(safe-area-inset-top)) + 76px);
+          top: calc(max(8px, env(safe-area-inset-top)) + 112px);
           right: max(8px, env(safe-area-inset-right));
-          bottom: calc(max(8px, env(safe-area-inset-bottom)) + 94px);
-          width: min(232px, 62vw);
-          max-height: none;
+          bottom: auto;
+          width: min(310px, calc(100vw - 16px));
+          max-height: min(48vh, 370px);
           padding: 6px;
           background: rgba(8,14,22,.86);
+        }
+        #resident-toggle {
+          top: calc(max(8px, env(safe-area-inset-top)) + 42px);
+          right: max(8px, env(safe-area-inset-right));
+          padding: 7px 12px;
+          font-size: 12px;
         }
         .resident-card { padding: 6px 4px; }
         .resident-home { padding: 5px; }
@@ -107,6 +115,7 @@
     <canvas id="game-canvas" aria-label="洞府经营地图"></canvas>
     <div id="resources">粮食 120 · 材料 80 · 香火 0</div>
     <div id="time-display">第 1 天 06:00</div>
+    <button id="resident-toggle" type="button" aria-controls="resident-panel" aria-expanded="false">仙人 ▾</button>
     <div id="build-toolbar">
       <button class="build-button" data-building="road">青石路 · 拖动铺设</button>
       <button class="build-button" data-building="residence">居所 · 20材</button>
@@ -121,7 +130,7 @@
       <button id="save-button">保存</button>
       <button id="reset-button">重置</button>
     </div>
-    <div id="resident-panel" aria-label="仙人面板"></div>
+    <div id="resident-panel" aria-label="仙人面板" hidden></div>
     <div id="status">点击地图查看格子</div>
     <script type="module" src="./src/platform/web/main.js"></script>
   </body>
