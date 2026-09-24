@@ -83,8 +83,7 @@ export class MapRenderer {
       }
     }
 
-    this.drawBuildings(ctx);
-    this.drawResidents(ctx);
+    this.drawWorldObjects(ctx);
     this.drawPreview(ctx);
     this.drawLegend(ctx);
   }
@@ -119,98 +118,114 @@ export class MapRenderer {
     }
   }
 
-  drawBuildings(ctx) {
+  drawWorldObjects(ctx) {
     if (!this.gameState) return;
-    const buildings = [...this.gameState.buildings].sort((a, b) => (a.x + a.y) - (b.x + b.y));
-    for (const building of buildings) {
-      const definition = building.definition ?? building;
-      const center = this.camera.worldToScreen(
-        building.x + building.width / 2,
-        building.y + building.height / 2,
-      );
-      const scale = this.camera.zoom;
-      const frame = BUILDING_MODEL_FRAMES[building.typeId];
+    const objects = [
+      ...this.gameState.buildings.map((building) => ({
+        kind: "building",
+        depth: building.x + building.y + building.width + building.height,
+        value: building,
+      })),
+      ...this.gameState.residents.map((resident, index) => ({
+        kind: "resident",
+        depth: (resident.position?.x ?? 64) + (resident.position?.y ?? 64) + 0.2,
+        value: resident,
+        index,
+      })),
+    ].sort((a, b) => a.depth - b.depth);
 
-      if (this.modelAtlasReady && frame !== undefined) {
-        const size = MODEL_CELL_SIZE * scale;
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(
-          this.modelAtlas,
-          frame * MODEL_CELL_SIZE,
-          0,
-          MODEL_CELL_SIZE,
-          MODEL_CELL_SIZE,
-          center.x - size / 2,
-          center.y - size * 0.76,
-          size,
-          size,
-        );
-      } else {
-        const height = Math.max(5, 14 * scale);
-        const top = this.camera.worldToScreen(building.x, building.y);
-        const right = this.camera.worldToScreen(building.x + building.width, building.y);
-        const bottom = this.camera.worldToScreen(building.x + building.width, building.y + building.height);
-        const left = this.camera.worldToScreen(building.x, building.y + building.height);
-        ctx.beginPath();
-        ctx.moveTo(top.x, top.y - height);
-        ctx.lineTo(right.x, right.y - height);
-        ctx.lineTo(bottom.x, bottom.y - height);
-        ctx.lineTo(left.x, left.y - height);
-        ctx.closePath();
-        ctx.fillStyle = definition.color ?? "#8398a8";
-        ctx.fill();
-      }
-
-      const label = definition.name ?? building.typeId;
-      ctx.save();
-      ctx.fillStyle = COLORS.text;
-      ctx.strokeStyle = "rgba(8,14,22,0.9)";
-      ctx.lineWidth = Math.max(2, 3 * scale);
-      ctx.font = `${Math.max(9, 11 * scale)}px system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.strokeText(label, center.x, center.y - 82 * scale);
-      ctx.fillText(label, center.x, center.y - 82 * scale);
-      ctx.restore();
+    for (const object of objects) {
+      if (object.kind === "building") this.drawBuilding(ctx, object.value);
+      else this.drawResident(ctx, object.value, object.index);
     }
   }
 
-  drawResidents(ctx) {
-    if (!this.gameState?.residents?.length || !this.modelAtlasReady) return;
-    const offsets = [
-      { x: -0.35, y: 0.55 },
-      { x: 0.3, y: 0.7 },
-      { x: 0.65, y: 0.25 },
-    ];
-    this.gameState.residents.forEach((resident, index) => {
-      const home = this.gameState.buildings.find((building) => building.id === resident.homeBuildingId);
-      const offset = offsets[index % offsets.length];
-      const worldX = home ? home.x + home.width / 2 + offset.x : 63.5 + index * 0.65;
-      const worldY = home ? home.y + home.height / 2 + offset.y : 65.2;
-      const point = this.camera.worldToScreen(worldX, worldY);
-      const frame = RESIDENT_MODEL_FRAMES[resident.id];
-      if (frame === undefined) return;
-      const size = 76 * this.camera.zoom;
+  drawBuilding(ctx, building) {
+    const definition = building.definition ?? building;
+    const center = this.camera.worldToScreen(
+      building.x + building.width / 2,
+      building.y + building.height / 2,
+    );
+    const scale = this.camera.zoom;
+    const frame = BUILDING_MODEL_FRAMES[building.typeId];
+
+    if (this.modelAtlasReady && frame !== undefined) {
+      const size = MODEL_CELL_SIZE * scale;
+      ctx.imageSmoothingEnabled = true;
       ctx.drawImage(
         this.modelAtlas,
         frame * MODEL_CELL_SIZE,
         0,
         MODEL_CELL_SIZE,
         MODEL_CELL_SIZE,
-        point.x - size / 2,
-        point.y - size * 0.88,
+        center.x - size / 2,
+        center.y - size * 0.76,
         size,
         size,
       );
-      ctx.save();
-      ctx.fillStyle = COLORS.text;
-      ctx.strokeStyle = "rgba(8,14,22,0.9)";
-      ctx.lineWidth = Math.max(2, 2.5 * this.camera.zoom);
-      ctx.font = `${Math.max(8, 10 * this.camera.zoom)}px system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.strokeText(resident.name, point.x, point.y - size * 0.78);
-      ctx.fillText(resident.name, point.x, point.y - size * 0.78);
-      ctx.restore();
-    });
+    } else {
+      const height = Math.max(5, 14 * scale);
+      const top = this.camera.worldToScreen(building.x, building.y);
+      const right = this.camera.worldToScreen(building.x + building.width, building.y);
+      const bottom = this.camera.worldToScreen(building.x + building.width, building.y + building.height);
+      const left = this.camera.worldToScreen(building.x, building.y + building.height);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y - height);
+      ctx.lineTo(right.x, right.y - height);
+      ctx.lineTo(bottom.x, bottom.y - height);
+      ctx.lineTo(left.x, left.y - height);
+      ctx.closePath();
+      ctx.fillStyle = definition.color ?? "#8398a8";
+      ctx.fill();
+    }
+
+    const label = definition.name ?? building.typeId;
+    ctx.save();
+    ctx.fillStyle = COLORS.text;
+    ctx.strokeStyle = "rgba(8,14,22,0.9)";
+    ctx.lineWidth = Math.max(2, 3 * scale);
+    ctx.font = `${Math.max(9, 11 * scale)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.strokeText(label, center.x, center.y - 82 * scale);
+    ctx.fillText(label, center.x, center.y - 82 * scale);
+    ctx.restore();
+  }
+
+  drawResident(ctx, resident, index) {
+    if (!this.modelAtlasReady) return;
+    const position = resident.position ?? { x: 63.5 + index * 0.65, y: 65.2 };
+    const point = this.camera.worldToScreen(position.x, position.y);
+    const frame = RESIDENT_MODEL_FRAMES[resident.id];
+    if (frame === undefined) return;
+    const size = 76 * this.camera.zoom;
+    const walking = resident.activity?.startsWith("walking");
+    const bob = walking ? Math.sin(Date.now() / 130 + index) * 2.5 * this.camera.zoom : 0;
+    ctx.drawImage(
+      this.modelAtlas,
+      frame * MODEL_CELL_SIZE,
+      0,
+      MODEL_CELL_SIZE,
+      MODEL_CELL_SIZE,
+      point.x - size / 2,
+      point.y - size * 0.88 + bob,
+      size,
+      size,
+    );
+    ctx.save();
+    ctx.fillStyle = resident.activity === "working" ? "#f8d477" : COLORS.text;
+    ctx.strokeStyle = "rgba(8,14,22,0.9)";
+    ctx.lineWidth = Math.max(2, 2.5 * this.camera.zoom);
+    ctx.font = `${Math.max(8, 10 * this.camera.zoom)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.strokeText(resident.name, point.x, point.y - size * 0.78 + bob);
+    ctx.fillText(resident.name, point.x, point.y - size * 0.78 + bob);
+    if (resident.activity === "working") {
+      ctx.fillStyle = "#f8d477";
+      ctx.beginPath();
+      ctx.arc(point.x + size * 0.22, point.y - size * 0.62 + bob, Math.max(2, 3 * this.camera.zoom), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   drawPreview(ctx) {
