@@ -83,6 +83,9 @@ export function assignResidentHome(state, residentId, buildingId) {
   if (!resident) return { ok: false, reason: "resident_not_found" };
   if (!buildingId) {
     resident.homeBuildingId = null;
+    resident.route = [];
+    resident.routeIndex = 0;
+    resident.routeTargetBuildingId = null;
     return { ok: true, resident, building: null };
   }
   const building = state.buildings.find((item) => item.id === buildingId);
@@ -92,6 +95,9 @@ export function assignResidentHome(state, residentId, buildingId) {
   const occupied = state.residents.filter((item) => item.homeBuildingId === buildingId && item.id !== residentId).length;
   if (occupied >= capacity) return { ok: false, reason: "home_full" };
   resident.homeBuildingId = buildingId;
+  resident.route = [];
+  resident.routeIndex = 0;
+  resident.routeTargetBuildingId = null;
   resident.mood = Math.min(100, resident.mood + 3);
   return { ok: true, resident, building };
 }
