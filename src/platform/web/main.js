@@ -65,9 +65,10 @@ function updateResources() {
 function homeOptions(resident) {
   const housing = getHousingSummary(gameState);
   return [`<option value="">未安排居所</option>`, ...housing.residences.map((building) => {
-    const occupied = gameState.residents.filter((item) => item.homeBuildingId === building.id && item.id !== resident.id).length;
+    const occupied = gameState.residents.filter((item) => item.homeBuildingId === building.id).length;
+    const otherOccupants = gameState.residents.filter((item) => item.homeBuildingId === building.id && item.id !== resident.id).length;
     const capacity = getBuildingDefinition(building.typeId)?.capacity ?? 0;
-    const disabled = occupied >= capacity && resident.homeBuildingId !== building.id ? " disabled" : "";
+    const disabled = otherOccupants >= capacity && resident.homeBuildingId !== building.id ? " disabled" : "";
     return `<option value="${building.id}"${resident.homeBuildingId === building.id ? " selected" : ""}${disabled}>${building.name} · ${occupied}/${capacity}</option>`;
   })].join("");
 }
@@ -76,9 +77,10 @@ function workplaceOptions(resident) {
   const workplaces = getCompatibleWorkplaces(gameState, resident);
   return [`<option value="">未安排工作地</option>`, ...workplaces.map((building) => {
     const definition = getBuildingDefinition(building.typeId);
-    const occupied = gameState.residents.filter((item) => item.id !== resident.id && item.workplaceBuildingId === building.id).length;
+    const occupied = gameState.residents.filter((item) => item.workplaceBuildingId === building.id).length;
+    const otherWorkers = gameState.residents.filter((item) => item.id !== resident.id && item.workplaceBuildingId === building.id).length;
     const capacity = definition?.workerCapacity ?? 0;
-    const disabled = occupied >= capacity && resident.workplaceBuildingId !== building.id ? " disabled" : "";
+    const disabled = otherWorkers >= capacity && resident.workplaceBuildingId !== building.id ? " disabled" : "";
     return `<option value="${building.id}"${resident.workplaceBuildingId === building.id ? " selected" : ""}${disabled}>${building.name} · ${occupied}/${capacity}</option>`;
   })].join("");
 }
