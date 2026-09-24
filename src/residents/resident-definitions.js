@@ -35,5 +35,7 @@ export function createInitialResidents() {
     energy: 100,
     mood: 80,
     homeBuildingId: null,
+    workplaceBuildingId: null,
+    activity: "idle",
   }));
 }
