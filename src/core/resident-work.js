@@ -1,21 +1,23 @@
 import { getBuildingDefinition } from "../building/building-definitions.js";
+import { findRoadRoute, isRoadRouteValid } from "./road-pathfinding.js";
 
 export const ACTIVITY_LABELS = Object.freeze({
   idle: "空闲",
   waiting_home: "暂无居所",
   waiting_workplace: "等待分配工作地",
-  walking_to_work: "前往工作",
+  waiting_route: "道路未连通",
+  walking_to_work: "沿路前往工作",
   working: "工作中",
-  walking_home: "返回居所",
+  walking_home: "沿路返回居所",
   resting: "休息中",
   exhausted: "精力不足",
 });
 
 function getBuildingCenter(building, residentIndex = 0) {
-  const offset = (residentIndex % 3 - 1) * 0.18;
+  const offset = (residentIndex % 3 - 1) * 0.14;
   return {
     x: building.x + building.width / 2 + offset,
-    y: building.y + building.height / 2 + 0.42,
+    y: building.y + building.height / 2 + 0.28,
   };
 }
 
@@ -24,16 +26,26 @@ function isCompatible(building, jobId) {
   return jobs.includes(jobId);
 }
 
+function clearRoute(resident) {
+  resident.route = [];
+  resident.routeIndex = 0;
+  resident.routeTargetBuildingId = null;
+}
+
 export function ensureResidentWorkState(state) {
   state.residents.forEach((resident, index) => {
     resident.workplaceBuildingId ??= null;
     resident.activity ??= "idle";
     resident.position ??= { x: 63.5 + index * 0.65, y: 65.2 };
     resident.facing ??= "right";
+    resident.route = Array.isArray(resident.route) ? resident.route : [];
+    resident.routeIndex = Number.isInteger(resident.routeIndex) ? resident.routeIndex : 0;
+    resident.routeTargetBuildingId ??= null;
     const workplace = state.buildings.find((building) => building.id === resident.workplaceBuildingId);
     if (resident.workplaceBuildingId && (!workplace || !isCompatible(workplace, resident.job))) {
       resident.workplaceBuildingId = null;
       resident.activity = "waiting_workplace";
+      clearRoute(resident);
     }
   });
 }
@@ -49,6 +61,7 @@ export function assignResidentWorkplace(state, residentId, buildingId) {
   if (!buildingId) {
     resident.workplaceBuildingId = null;
     resident.activity = "waiting_workplace";
+    clearRoute(resident);
     return { ok: true, resident, building: null };
   }
   const building = state.buildings.find((item) => item.id === buildingId);
@@ -59,6 +72,7 @@ export function assignResidentWorkplace(state, residentId, buildingId) {
   if (occupied >= capacity) return { ok: false, reason: "workplace_full" };
   resident.workplaceBuildingId = buildingId;
   resident.activity = "walking_to_work";
+  clearRoute(resident);
   return { ok: true, resident, building };
 }
 
@@ -67,6 +81,7 @@ export function clearIncompatibleWorkplace(state, resident) {
   if (!workplace || !isCompatible(workplace, resident.job)) {
     resident.workplaceBuildingId = null;
     resident.activity = "waiting_workplace";
+    clearRoute(resident);
   }
 }
 
@@ -77,7 +92,7 @@ function moveResidentToward(resident, target, distance) {
   const length = Math.hypot(dx, dy);
   const arrived = length <= distance || length < 0.001;
   const nextPosition = arrived
-    ? { ...target }
+    ? { x: target.x, y: target.y }
     : {
         x: position.x + dx / length * distance,
         y: position.y + dy / length * distance,
@@ -85,7 +100,52 @@ function moveResidentToward(resident, target, distance) {
   const screenDeltaX = (nextPosition.x - position.x) - (nextPosition.y - position.y);
   if (Math.abs(screenDeltaX) > 0.001) resident.facing = screenDeltaX < 0 ? "left" : "right";
   resident.position = nextPosition;
-  return { position: nextPosition, arrived };
+  return { arrived, distanceUsed: arrived ? length : distance };
+}
+
+function buildRoute(state, resident, fromBuilding, targetBuilding, residentIndex) {
+  const roadRoute = findRoadRoute(state, fromBuilding, targetBuilding, resident.position);
+  if (!roadRoute) {
+    clearRoute(resident);
+    resident.routeTargetBuildingId = targetBuilding.id;
+    return false;
+  }
+  resident.route = [
+    ...roadRoute,
+    { ...getBuildingCenter(targetBuilding, residentIndex), road: false },
+  ];
+  resident.routeIndex = 0;
+  resident.routeTargetBuildingId = targetBuilding.id;
+  return true;
+}
+
+function travelToBuilding(state, resident, fromBuilding, targetBuilding, residentIndex, distance) {
+  const destination = getBuildingCenter(targetBuilding, residentIndex);
+  if (Math.hypot(resident.position.x - destination.x, resident.position.y - destination.y) < 0.04) {
+    resident.position = destination;
+    clearRoute(resident);
+    return "arrived";
+  }
+
+  const routeNeedsRefresh = resident.routeTargetBuildingId !== targetBuilding.id
+    || !isRoadRouteValid(state, resident.route, resident.routeIndex);
+  if (routeNeedsRefresh && !buildRoute(state, resident, fromBuilding, targetBuilding, residentIndex)) {
+    return "no_route";
+  }
+
+  let remaining = distance;
+  while (remaining > 0 && resident.routeIndex < resident.route.length) {
+    const movement = moveResidentToward(resident, resident.route[resident.routeIndex], remaining);
+    remaining -= movement.distanceUsed;
+    if (!movement.arrived) break;
+    resident.routeIndex += 1;
+  }
+  if (resident.routeIndex >= resident.route.length) {
+    resident.position = destination;
+    clearRoute(resident);
+    return "arrived";
+  }
+  return "walking";
 }
 
 export function updateResidentWork(state, minutes) {
@@ -99,10 +159,12 @@ export function updateResidentWork(state, minutes) {
     const workplace = state.buildings.find((building) => building.id === resident.workplaceBuildingId);
 
     if (resident.energy <= 0) {
-      resident.activity = "exhausted";
-      if (!home) return;
-      const movement = moveResidentToward(resident, getBuildingCenter(home, index), stepDistance);
-      if (movement.arrived) resident.activity = "resting";
+      if (!home) {
+        resident.activity = "exhausted";
+        return;
+      }
+      const result = travelToBuilding(state, resident, workplace, home, index, stepDistance);
+      resident.activity = result === "arrived" ? "resting" : result === "no_route" ? "waiting_route" : "walking_home";
       return;
     }
 
@@ -110,20 +172,32 @@ export function updateResidentWork(state, minutes) {
       if (!workplace || !isCompatible(workplace, resident.job)) {
         resident.workplaceBuildingId = null;
         resident.activity = "waiting_workplace";
+        clearRoute(resident);
         return;
       }
-      const movement = moveResidentToward(resident, getBuildingCenter(workplace, index), stepDistance);
-      resident.activity = movement.arrived ? "working" : "walking_to_work";
+      if (!home) {
+        resident.activity = "waiting_home";
+        clearRoute(resident);
+        return;
+      }
+      const result = travelToBuilding(state, resident, home, workplace, index, stepDistance);
+      resident.activity = result === "arrived" ? "working" : result === "no_route" ? "waiting_route" : "walking_to_work";
       return;
     }
 
     if (!home) {
       resident.activity = "waiting_home";
+      clearRoute(resident);
       return;
     }
-    const movement = moveResidentToward(resident, getBuildingCenter(home, index), stepDistance);
-    resident.position = movement.position;
-    resident.activity = movement.arrived ? "resting" : "walking_home";
+    if (!workplace) {
+      resident.position = getBuildingCenter(home, index);
+      resident.activity = "resting";
+      clearRoute(resident);
+      return;
+    }
+    const result = travelToBuilding(state, resident, workplace, home, index, stepDistance);
+    resident.activity = result === "arrived" ? "resting" : result === "no_route" ? "waiting_route" : "walking_home";
   });
 }
 
