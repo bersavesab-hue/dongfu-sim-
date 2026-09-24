@@ -16,6 +16,8 @@ export const BUILDING_DEFINITIONS = Object.freeze({
     cost: { materials: 12 },
     color: "#6e9b5d",
     production: { food: 3 },
+    workerCapacity: 1,
+    workerJobs: Object.freeze(["farmer"]),
   }),
   workshop: Object.freeze({
     id: "workshop",
@@ -25,6 +27,8 @@ export const BUILDING_DEFINITIONS = Object.freeze({
     cost: { materials: 28 },
     color: "#5c7898",
     production: { materials: 2 },
+    workerCapacity: 1,
+    workerJobs: Object.freeze(["artisan"]),
   }),
   canteen: Object.freeze({
     id: "canteen",
@@ -34,6 +38,8 @@ export const BUILDING_DEFINITIONS = Object.freeze({
     cost: { materials: 18 },
     color: "#a66f52",
     effects: Object.freeze({ foodConsumptionReduction: 0.25, moodPerTick: 0.1 }),
+    workerCapacity: 1,
+    workerJobs: Object.freeze(["steward"]),
   }),
   warehouse: Object.freeze({
     id: "warehouse",
@@ -43,6 +49,8 @@ export const BUILDING_DEFINITIONS = Object.freeze({
     cost: { materials: 24 },
     color: "#766d9b",
     storage: Object.freeze({ food: 240, materials: 160, incense: 120 }),
+    workerCapacity: 1,
+    workerJobs: Object.freeze(["steward"]),
   }),
 });
 
