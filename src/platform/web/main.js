@@ -3,6 +3,7 @@ import { createBuildingState, canPlaceBuilding } from "../../core/building-state
 import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
+import { ACTIVITY_LABELS, assignResidentWorkplace, getCompatibleWorkplaces } from "../../core/resident-work.js";
 import { advanceSimulation, assignResidentHome, enforceResourceLimits, formatGameTime, getHousingSummary, getResourceLimits, getSettlementEffects, setResidentJob } from "../../core/simulation.js";
 import { JOB_DEFINITIONS } from "../../residents/resident-definitions.js";
 import { IsoCamera } from "../../render/iso-camera.js";
@@ -36,6 +37,9 @@ const REASONS = Object.freeze({
   home_not_found: "居所不存在",
   home_not_residence: "该建筑不是居所",
   home_full: "该居所已满",
+  workplace_not_found: "工作建筑不存在",
+  workplace_incompatible: "该建筑不适合当前职业",
+  workplace_full: "该工作建筑已满员",
 });
 
 function resize() {
@@ -68,6 +72,17 @@ function homeOptions(resident) {
   })].join("");
 }
 
+function workplaceOptions(resident) {
+  const workplaces = getCompatibleWorkplaces(gameState, resident);
+  return [`<option value="">未安排工作地</option>`, ...workplaces.map((building) => {
+    const definition = getBuildingDefinition(building.typeId);
+    const occupied = gameState.residents.filter((item) => item.id !== resident.id && item.workplaceBuildingId === building.id).length;
+    const capacity = definition?.workerCapacity ?? 0;
+    const disabled = occupied >= capacity && resident.workplaceBuildingId !== building.id ? " disabled" : "";
+    return `<option value="${building.id}"${resident.workplaceBuildingId === building.id ? " selected" : ""}${disabled}>${building.name} · ${occupied}/${capacity}</option>`;
+  })].join("");
+}
+
 function updateSimulationUI() {
   timeDisplay.textContent = formatGameTime(gameState);
   pauseButton.textContent = gameState.paused ? "继续时间" : "暂停时间";
@@ -86,7 +101,10 @@ function updateSimulationUI() {
       <select class="resident-home" data-home-resident="${resident.id}" aria-label="${resident.name}的居所">
         ${homeOptions(resident)}
       </select>
-      <div class="resident-output">当前：${job.name}</div>
+      <select class="resident-home" data-work-resident="${resident.id}" aria-label="${resident.name}的工作地">
+        ${workplaceOptions(resident)}
+      </select>
+      <div class="resident-output">职业：${job.name} · 状态：${ACTIVITY_LABELS[resident.activity] ?? resident.activity}</div>
     </div>`;
   }).join("");
 }
@@ -239,16 +257,29 @@ residentPanel.addEventListener("click", (event) => {
 });
 
 residentPanel.addEventListener("change", (event) => {
-  const select = event.target.closest("[data-home-resident]");
-  if (!select) return;
-  const result = assignResidentHome(gameState, select.dataset.homeResident, select.value || null);
+  const homeSelect = event.target.closest("[data-home-resident]");
+  if (homeSelect) {
+    const result = assignResidentHome(gameState, homeSelect.dataset.homeResident, homeSelect.value || null);
+    if (!result.ok) {
+      updateSimulationUI();
+      status.textContent = REASONS[result.reason] ?? "无法安排居所";
+      return;
+    }
+    updateSimulationUI();
+    persistGame(result.building ? `${result.resident.name} 已入住 ${result.building.name}` : `${result.resident.name} 暂无居所`);
+    return;
+  }
+
+  const workSelect = event.target.closest("[data-work-resident]");
+  if (!workSelect) return;
+  const result = assignResidentWorkplace(gameState, workSelect.dataset.workResident, workSelect.value || null);
   if (!result.ok) {
     updateSimulationUI();
-    status.textContent = REASONS[result.reason] ?? "无法安排居所";
+    status.textContent = REASONS[result.reason] ?? "无法安排工作地";
     return;
   }
   updateSimulationUI();
-  persistGame(result.building ? `${result.resident.name} 已入住 ${result.building.name}` : `${result.resident.name} 暂无居所`);
+  persistGame(result.building ? `${result.resident.name} 已前往 ${result.building.name} 工作` : `${result.resident.name} 暂无工作地`);
 });
 
 document.querySelectorAll(".build-button").forEach((button) => {
