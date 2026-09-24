@@ -238,17 +238,36 @@ export class MapRenderer {
     ctx.fill();
     ctx.restore();
 
-    ctx.drawImage(
-      this.modelAtlas,
-      frame * MODEL_CELL_SIZE,
-      0,
-      MODEL_CELL_SIZE,
-      MODEL_CELL_SIZE,
-      point.x - size / 2,
-      point.y - size * KAIRO_VISUAL_SCALE.residentFootRatio + bob,
-      size,
-      size,
-    );
+    const drawY = point.y - size * KAIRO_VISUAL_SCALE.residentFootRatio + bob;
+    ctx.save();
+    if (resident.facing === "left") {
+      ctx.translate(point.x, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(
+        this.modelAtlas,
+        frame * MODEL_CELL_SIZE,
+        0,
+        MODEL_CELL_SIZE,
+        MODEL_CELL_SIZE,
+        -size / 2,
+        drawY,
+        size,
+        size,
+      );
+    } else {
+      ctx.drawImage(
+        this.modelAtlas,
+        frame * MODEL_CELL_SIZE,
+        0,
+        MODEL_CELL_SIZE,
+        MODEL_CELL_SIZE,
+        point.x - size / 2,
+        drawY,
+        size,
+        size,
+      );
+    }
+    ctx.restore();
 
     const importantState = ["waiting_home", "waiting_workplace", "exhausted"].includes(resident.activity);
     if (this.camera.zoom >= KAIRO_VISUAL_SCALE.residentLabelMinZoom || importantState) {
