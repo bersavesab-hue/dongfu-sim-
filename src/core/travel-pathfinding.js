@@ -2,6 +2,7 @@ const DIRECTIONS = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 
 const key = (x, y) => `${x},${y}`;
 
 function passable(state, x, y) {
+  if (x < 0 || y < 0 || x >= state.map.width || y >= state.map.height) return false;
   const tile = state.map.tiles[y * state.map.width + x];
   if (!tile?.buildable) return false;
   const building = state.buildings.find((item) => item.id === tile.buildingId);

@@ -4,7 +4,7 @@ export const KAIRO_VISUAL_SCALE = Object.freeze({
   defaultZoom: 0.82,
   minZoom: 0.42,
   maxZoom: 1.85,
-  residentSpriteSize: 62,
+  residentSpriteSize: 104,
   residentFootRatio: 0.95,
   buildingLabelMinZoom: 1.02,
   residentLabelMinZoom: 1.18,
