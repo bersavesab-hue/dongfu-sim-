@@ -6,8 +6,8 @@ const COLORS = Object.freeze({
   background: "#13202a",
   grass: "#36584a",
   grassAlt: "#3c6252",
-  buildable: "#8e7a48",
-  buildableAlt: "#9d8750",
+  buildable: "#53764b",
+  buildableAlt: "#587b4e",
   selected: "#ffd96a",
   preview: "#9ee493",
   previewInvalid: "#ef756f",
@@ -29,6 +29,7 @@ export class MapRenderer {
     this.roadPreview = [];
     this.roadPreviewValid = true;
     this.demolishPreview = [];
+    this.motion = null;
     this.modelAtlas = new Image();
     this.modelAtlasReady = false;
     this.modelAtlas.addEventListener("load", () => {
@@ -43,6 +44,18 @@ export class MapRenderer {
 
   setGameState(gameState) {
     this.gameState = gameState;
+  }
+
+  setMotion(previous, startedAt) {
+    this.motion = { previous, startedAt };
+  }
+
+  visualPosition(resident) {
+    const current = resident.position;
+    const previous = this.motion?.previous.get(resident.id);
+    if (!current || !previous || this.gameState?.paused) return current;
+    const fraction = Math.min(1, Math.max(0, (performance.now() - this.motion.startedAt) / 1000));
+    return { x: previous.x + (current.x - previous.x) * fraction, y: previous.y + (current.y - previous.y) * fraction };
   }
 
   setSelectedTile(tile) {
@@ -132,6 +145,16 @@ export class MapRenderer {
     ctx.lineWidth = Math.max(0.45, this.camera.zoom * 0.55);
     ctx.stroke();
 
+    if (!tile.buildingId && this.camera.zoom > 0.57) {
+      const seed = (tile.x * 73856093 ^ tile.y * 19349663) >>> 0;
+      const center = this.camera.worldToScreen(tile.x + 0.5, tile.y + 0.5);
+      ctx.fillStyle = seed % 7 === 0 ? "rgba(229,214,155,.48)" : "rgba(178,211,137,.38)";
+      const offset = ((seed % 11) - 5) * this.camera.zoom;
+      ctx.beginPath();
+      ctx.ellipse(center.x + offset, center.y + offset * 0.3, 1.8 * this.camera.zoom, 0.8 * this.camera.zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     if (this.selectedTile?.x === tile.x && this.selectedTile?.y === tile.y) {
       ctx.strokeStyle = COLORS.selected;
       ctx.lineWidth = Math.max(1.5, this.camera.zoom * 2);
@@ -217,7 +240,7 @@ export class MapRenderer {
       })),
       ...this.gameState.residents.map((resident, index) => ({
         kind: "resident",
-        depth: (resident.position?.x ?? 64) + (resident.position?.y ?? 64) + 0.35,
+        depth: (this.visualPosition(resident)?.x ?? 64) + (this.visualPosition(resident)?.y ?? 64) + 0.35,
         value: resident,
         index,
       })),
@@ -299,7 +322,7 @@ export class MapRenderer {
 
   drawResident(ctx, resident, index) {
     if (!this.modelAtlasReady) return;
-    const position = resident.position ?? { x: 63.5 + index * 0.65, y: 65.2 };
+    const position = this.visualPosition(resident) ?? { x: 63.5 + index * 0.65, y: 65.2 };
     const point = this.camera.worldToScreen(position.x, position.y);
     const frame = RESIDENT_MODEL_FRAMES[resident.id];
     if (frame === undefined) return;

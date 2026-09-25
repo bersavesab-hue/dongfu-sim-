@@ -1,15 +1,15 @@
 import { getBuildingDefinition } from "../building/building-definitions.js";
-import { findRoadRoute, isRoadRouteValid } from "./road-pathfinding.js";
+import { findTravelRoute, isTravelRouteValid } from "./travel-pathfinding.js";
 import { ECONOMY_RULES } from "./economy-rules.js";
 
 export const ACTIVITY_LABELS = Object.freeze({
   idle: "空闲",
   waiting_home: "暂无居所",
   waiting_workplace: "等待分配工作地",
-  waiting_route: "道路未连通",
-  walking_to_work: "沿路前往工作",
+  waiting_route: "通路被建筑挡住",
+  walking_to_work: "前往工作",
   working: "工作中",
-  walking_home: "沿路返回居所",
+  walking_home: "返回居所",
   resting: "休息中",
   exhausted: "精力不足",
 });
@@ -108,7 +108,7 @@ function moveResidentToward(resident, target, distance) {
 }
 
 function buildRoute(state, resident, fromBuilding, targetBuilding, residentIndex) {
-  const roadRoute = findRoadRoute(state, fromBuilding, targetBuilding, resident.position);
+  const roadRoute = findTravelRoute(state, fromBuilding, targetBuilding, resident.position);
   if (!roadRoute) {
     clearRoute(resident);
     resident.routeTargetBuildingId = targetBuilding.id;
@@ -120,6 +120,7 @@ function buildRoute(state, resident, fromBuilding, targetBuilding, residentIndex
   ];
   resident.routeIndex = 0;
   resident.routeTargetBuildingId = targetBuilding.id;
+  resident.routeVerifiedRevision = state.mapRevision;
   return true;
 }
 
@@ -127,7 +128,7 @@ function travelToBuilding(state, resident, fromBuilding, targetBuilding, residen
   const destination = getBuildingCenter(targetBuilding, residentIndex);
   if (Math.hypot(resident.position.x - destination.x, resident.position.y - destination.y) < 0.04) {
     if (resident.routeVerifiedRevision !== state.mapRevision) {
-      if (!findRoadRoute(state, fromBuilding, targetBuilding, null)) {
+      if (!findTravelRoute(state, fromBuilding, targetBuilding, null)) {
         clearRoute(resident);
         return "no_route";
       }
@@ -139,15 +140,18 @@ function travelToBuilding(state, resident, fromBuilding, targetBuilding, residen
   }
 
   const routeNeedsRefresh = resident.routeTargetBuildingId !== targetBuilding.id
-    || !isRoadRouteValid(state, resident.route, resident.routeIndex);
+    || resident.routeVerifiedRevision !== state.mapRevision
+    || !isTravelRouteValid(state, resident.route, resident.routeIndex);
   if (routeNeedsRefresh && !buildRoute(state, resident, fromBuilding, targetBuilding, residentIndex)) {
     return "no_route";
   }
 
   let remaining = distance;
   while (remaining > 0 && resident.routeIndex < resident.route.length) {
-    const movement = moveResidentToward(resident, resident.route[resident.routeIndex], remaining);
-    remaining -= movement.distanceUsed;
+    const waypoint = resident.route[resident.routeIndex];
+    const speedFactor = waypoint.ground && !waypoint.road ? 0.65 : 1;
+    const movement = moveResidentToward(resident, waypoint, remaining * speedFactor);
+    remaining -= movement.distanceUsed / speedFactor;
     if (!movement.arrived) break;
     resident.routeIndex += 1;
   }

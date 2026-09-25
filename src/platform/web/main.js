@@ -1,6 +1,7 @@
 import { getBuildingDefinition } from "../../building/building-definitions.js";
 import { createBuildingState, canPlaceBuilding, canPlaceRoadBatch } from "../../core/building-state.js";
 import { executeBuildingCommand } from "../../core/building-commands.js";
+import { autoAssignResidents } from "../../core/auto-assignment.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
 import { ACTIVITY_LABELS, assignResidentWorkplace, getCompatibleWorkplaces } from "../../core/resident-work.js";
@@ -113,10 +114,11 @@ function updateSimulationUI() {
     ? "野外采集 · 粮12 材6"
     : `采集恢复中 · ${Math.ceil(rescue.remainingMinutes / 60)}时`;
   rescueButton.disabled = !rescue.available;
+  if (residentPanel.contains(document.activeElement) && document.activeElement.tagName === "SELECT") return;
   const housing = getHousingSummary(gameState);
   const effects = getSettlementEffects(gameState);
   const saving = Math.round(effects.foodConsumptionReduction * 100);
-  residentPanel.innerHTML = `<div class="resident-summary">居所 ${housing.occupied}/${housing.capacity} · 膳堂 ${effects.staffedCanteens}/${effects.canteens} 在岗 · 节粮 ${saving}%</div>` + gameState.residents.map((resident) => {
+  residentPanel.innerHTML = `<div class="resident-summary">居所 ${housing.occupied}/${housing.capacity} · 膳堂 ${effects.staffedCanteens}/${effects.canteens} 在岗 · 节粮 ${saving}%</div><button class="auto-assign" data-auto-assign>一键安排入住与工作</button>` + gameState.residents.map((resident) => {
     const job = JOB_DEFINITIONS[resident.job];
     const housed = housing.residences.some((building) => building.id === resident.homeBuildingId);
     return `<div class="resident-card">
@@ -300,10 +302,11 @@ function handleMapClick(tile) {
       return;
     }
     renderer.setSelectedTile(tile);
+    const assigned = autoAssignResidents(gameState);
     enforceResourceLimits(gameState);
     updateResources();
     updateSimulationUI();
-    persistGame(`已建造 ${result.building.name} · 已自动保存`);
+    persistGame(`已建造 ${result.building.name} · 入住 ${assigned.housed} 人、派工 ${assigned.staffed} 人 · 已保存`);
     renderer.render(viewport.width, viewport.height);
     return;
   }
@@ -437,10 +440,17 @@ canvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 residentPanel.addEventListener("click", (event) => {
+  if (event.target.closest("[data-auto-assign]")) {
+    const assigned = autoAssignResidents(gameState);
+    updateSimulationUI();
+    persistGame(`已安排入住 ${assigned.housed} 人、工作 ${assigned.staffed} 人`);
+    return;
+  }
   const button = event.target.closest("[data-job]");
   if (!button) return;
   const result = setResidentJob(gameState, button.dataset.resident, button.dataset.job);
   if (result.ok) {
+    autoAssignResidents(gameState);
     updateSimulationUI();
     persistGame(`${result.resident.name} 已转为${JOB_DEFINITIONS[result.resident.job].name}`);
   }
@@ -506,7 +516,9 @@ document.querySelector("#rotate-button").addEventListener("click", () => {
 
 window.setInterval(() => {
   const before = gameState.timeMinutes;
+  const previous = new Map(gameState.residents.map((resident) => [resident.id, { ...resident.position }]));
   advanceSimulation(gameState, 10);
+  if (!gameState.paused) renderer.setMotion(previous, performance.now());
   updateResources();
   updateSimulationUI();
   if (!gameState.paused && before !== gameState.timeMinutes && gameState.timeMinutes % 60 === 0) {
@@ -514,6 +526,16 @@ window.setInterval(() => {
   }
   renderer.render(viewport.width, viewport.height);
 }, 1000);
+
+let lastFrame = 0;
+function animate(now) {
+  if (!gameState.paused && now - lastFrame >= 33 && gameState.residents.some((resident) => resident.activity?.startsWith("walking"))) {
+    renderer.render(viewport.width, viewport.height);
+    lastFrame = now;
+  }
+  window.requestAnimationFrame(animate);
+}
+window.requestAnimationFrame(animate);
 
 window.addEventListener("beforeunload", () => saveGameState(gameState, window.localStorage));
 window.addEventListener("resize", resize);

@@ -3,6 +3,8 @@ import { createMapGrid } from "../src/core/map-grid.js";
 import { createBuildingState, placeBuilding, placeRoadBatch, demolishBuilding } from "../src/core/building-state.js";
 import { ensureSimulationState, assignResidentHome, advanceSimulation, collectSupplies, getRescueStatus, getSettlementEffects } from "../src/core/simulation.js";
 import { assignResidentWorkplace } from "../src/core/resident-work.js";
+import { autoAssignResidents } from "../src/core/auto-assignment.js";
+import { findTravelRoute } from "../src/core/travel-pathfinding.js";
 import { loadGameState, serializeGameState } from "../src/core/save-manager.js";
 
 function fresh() { return ensureSimulationState(createBuildingState(createMapGrid())); }
@@ -54,10 +56,24 @@ assert.equal(farmWorker.activity, "working");
 const brokenRoad = opening.buildings.find((building) => building.typeId === "road" && building.x === 60 && building.y === 62);
 assert.equal(demolishBuilding(opening, brokenRoad.id).ok, true);
 advanceSimulation(opening, 10);
-assert.equal(farmWorker.activity, "waiting_route", "disconnecting a road stops an already working resident");
+assert.equal(farmWorker.activity, "working", "grass remains walkable after a road is removed");
 assert.equal(placeRoadBatch(opening, [{ x: 60, y: 62 }]).ok, true);
 advanceSimulation(opening, 10);
-assert.equal(farmWorker.activity, "working", "repairing the road resumes work");
+assert.equal(farmWorker.activity, "working", "replacing the road keeps work active");
+
+const walkable = fresh();
+const walkHome = build(walkable, "residence", 58, 60);
+const walkFarm = build(walkable, "farm", 64, 60);
+const automatic = autoAssignResidents(walkable);
+assert.equal(automatic.housed, 2, "new homes fill available beds");
+assert.equal(automatic.staffed, 1, "compatible worker fills a new workplace");
+const grassRoute = findTravelRoute(walkable, walkHome, walkFarm);
+assert.ok(grassRoute?.length > 0, "walking works without roads");
+const obstacle = build(walkable, "residence", 61, 60);
+const detour = findTravelRoute(walkable, walkHome, walkFarm);
+assert.ok(detour?.length > grassRoute.length, "route detours around a building");
+assert.ok(detour.every((point) => !(point.x >= obstacle.x && point.x < obstacle.x + obstacle.width && point.y >= obstacle.y && point.y < obstacle.y + obstacle.height)));
+assert.equal(loadGameState(createMapGrid(), { getItem: () => serializeGameState(walkable) }).residents.filter((person) => person.homeBuildingId).length, 2, "automatic housing survives reload");
 
 const shortage = fresh();
 shortage.resources.food = 0;
