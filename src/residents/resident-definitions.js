@@ -23,7 +23,7 @@ export const RESIDENT_DEFINITIONS = Object.freeze([
 ]);
 
 export const JOB_DEFINITIONS = Object.freeze({
-  farmer: Object.freeze({ id: "farmer", name: "农务", output: "food", amountPerHour: 6 }),
+  farmer: Object.freeze({ id: "farmer", name: "农务", output: "food", amountPerHour: 10 }),
   artisan: Object.freeze({ id: "artisan", name: "器作", output: "materials", amountPerHour: 4 }),
   steward: Object.freeze({ id: "steward", name: "执事", output: "incense", amountPerHour: 2 }),
 });

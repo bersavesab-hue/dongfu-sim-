@@ -4,7 +4,7 @@ import { executeBuildingCommand } from "../../core/building-commands.js";
 import { createMapGrid } from "../../core/map-grid.js";
 import { clearGameSave, loadGameState, saveGameState } from "../../core/save-manager.js";
 import { ACTIVITY_LABELS, assignResidentWorkplace, getCompatibleWorkplaces } from "../../core/resident-work.js";
-import { advanceSimulation, assignResidentHome, enforceResourceLimits, formatGameTime, getHousingSummary, getResourceLimits, getSettlementEffects, setResidentJob } from "../../core/simulation.js";
+import { advanceSimulation, assignResidentHome, collectSupplies, enforceResourceLimits, formatGameTime, getHousingSummary, getRescueStatus, getResourceLimits, getSettlementEffects, setResidentJob } from "../../core/simulation.js";
 import { JOB_DEFINITIONS } from "../../residents/resident-definitions.js";
 import { IsoCamera } from "../../render/iso-camera.js";
 import { MapRenderer } from "../../render/map-renderer.js";
@@ -16,6 +16,7 @@ const timeDisplay = document.querySelector("#time-display");
 const residentPanel = document.querySelector("#resident-panel");
 const residentToggle = document.querySelector("#resident-toggle");
 const pauseButton = document.querySelector("#pause-button");
+const rescueButton = document.querySelector("#rescue-button");
 const camera = new IsoCamera();
 const renderer = new MapRenderer(canvas, camera);
 const map = createMapGrid();
@@ -47,6 +48,9 @@ const REASONS = Object.freeze({
   workplace_full: "该工作建筑已满员",
   no_new_road: "拖动范围内没有新道路",
   road_not_found: "拖动范围内没有道路",
+  rescue_cooldown: "需要等采集地点恢复",
+  rescue_exhausted: "仙人精力不足，先让他们休息",
+  rescue_full: "粮食和材料仓储已满",
 });
 
 function resize() {
@@ -104,10 +108,15 @@ function workplaceOptions(resident) {
 function updateSimulationUI() {
   timeDisplay.textContent = formatGameTime(gameState);
   pauseButton.textContent = gameState.paused ? "继续时间" : "暂停时间";
+  const rescue = getRescueStatus(gameState);
+  rescueButton.textContent = rescue.available
+    ? "野外采集 · 粮12 材6"
+    : `采集恢复中 · ${Math.ceil(rescue.remainingMinutes / 60)}时`;
+  rescueButton.disabled = !rescue.available;
   const housing = getHousingSummary(gameState);
   const effects = getSettlementEffects(gameState);
   const saving = Math.round(effects.foodConsumptionReduction * 100);
-  residentPanel.innerHTML = `<div class="resident-summary">居所 ${housing.occupied}/${housing.capacity} · 膳堂 ${effects.canteens} · 节粮 ${saving}%</div>` + gameState.residents.map((resident) => {
+  residentPanel.innerHTML = `<div class="resident-summary">居所 ${housing.occupied}/${housing.capacity} · 膳堂 ${effects.staffedCanteens}/${effects.canteens} 在岗 · 节粮 ${saving}%</div>` + gameState.residents.map((resident) => {
     const job = JOB_DEFINITIONS[resident.job];
     const housed = housing.residences.some((building) => building.id === resident.homeBuildingId);
     return `<div class="resident-card">
@@ -477,6 +486,17 @@ document.querySelector("#pause-button").addEventListener("click", () => {
   gameState.paused = !gameState.paused;
   updateSimulationUI();
   persistGame(gameState.paused ? "时间已暂停" : "时间继续推进");
+});
+rescueButton.addEventListener("click", () => {
+  const result = collectSupplies(gameState);
+  if (!result.ok) {
+    status.textContent = REASONS[result.reason] ?? "暂时无法采集";
+    return;
+  }
+  updateResources();
+  updateSimulationUI();
+  persistGame(`${result.resident.name}采集完成：粮食 +${result.food}，材料 +${result.materials} · 已保存`);
+  renderer.render(viewport.width, viewport.height);
 });
 document.querySelector("#rotate-button").addEventListener("click", () => {
   rotation = (rotation + 1) % 4;

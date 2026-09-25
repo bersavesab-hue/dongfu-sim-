@@ -44,6 +44,7 @@
         font-size: 13px; text-align: left;
       }
       button.active, .resident-jobs button.selected { border-color: #f8d477; background: #5d4d2e; }
+      button:disabled { opacity: .58; }
       .resident-jobs button { padding: 4px 6px; font-size: 11px; }
       #cancel-button, #rotate-button, #pause-button { text-align: center; }
       @media (max-width: 700px) {
@@ -127,6 +128,7 @@
       <button id="demolish-button">拆除 · 道路可拖动</button>
       <button id="cancel-button">查看</button>
       <button id="pause-button">暂停时间</button>
+      <button id="rescue-button" title="耗时1小时，消耗12精力；每6小时可采集一次">野外采集 · 粮12 材6</button>
       <button id="save-button">保存</button>
       <button id="reset-button">重置</button>
     </div>

@@ -1,5 +1,6 @@
 import { getBuildingDefinition } from "../building/building-definitions.js";
 import { findRoadRoute, isRoadRouteValid } from "./road-pathfinding.js";
+import { ECONOMY_RULES } from "./economy-rules.js";
 
 export const ACTIVITY_LABELS = Object.freeze({
   idle: "空闲",
@@ -41,6 +42,7 @@ export function ensureResidentWorkState(state) {
     resident.route = Array.isArray(resident.route) ? resident.route : [];
     resident.routeIndex = Number.isInteger(resident.routeIndex) ? resident.routeIndex : 0;
     resident.routeTargetBuildingId ??= null;
+    resident.routeVerifiedRevision ??= -1;
     const home = state.buildings.find((building) => building.id === resident.homeBuildingId && building.typeId === "residence");
     if (home && resident.activity === "idle") resident.position = getBuildingCenter(home, index);
     const workplace = state.buildings.find((building) => building.id === resident.workplaceBuildingId);
@@ -124,6 +126,13 @@ function buildRoute(state, resident, fromBuilding, targetBuilding, residentIndex
 function travelToBuilding(state, resident, fromBuilding, targetBuilding, residentIndex, distance) {
   const destination = getBuildingCenter(targetBuilding, residentIndex);
   if (Math.hypot(resident.position.x - destination.x, resident.position.y - destination.y) < 0.04) {
+    if (resident.routeVerifiedRevision !== state.mapRevision) {
+      if (!findRoadRoute(state, fromBuilding, targetBuilding, null)) {
+        clearRoute(resident);
+        return "no_route";
+      }
+      resident.routeVerifiedRevision = state.mapRevision;
+    }
     resident.position = destination;
     clearRoute(resident);
     return "arrived";
@@ -144,6 +153,7 @@ function travelToBuilding(state, resident, fromBuilding, targetBuilding, residen
   }
   if (resident.routeIndex >= resident.route.length) {
     resident.position = destination;
+    resident.routeVerifiedRevision = state.mapRevision;
     clearRoute(resident);
     return "arrived";
   }
@@ -153,7 +163,7 @@ function travelToBuilding(state, resident, fromBuilding, targetBuilding, residen
 export function updateResidentWork(state, minutes) {
   ensureResidentWorkState(state);
   const minuteOfDay = state.timeMinutes % (24 * 60);
-  const onDuty = minuteOfDay >= 360 && minuteOfDay < 1080;
+  const onDuty = minuteOfDay >= ECONOMY_RULES.shiftStart && minuteOfDay < ECONOMY_RULES.shiftEnd;
   const stepDistance = Math.max(0, minutes) * 0.08;
 
   state.residents.forEach((resident, index) => {

@@ -1,9 +1,10 @@
 import { getBuildingDefinition } from "../building/building-definitions.js";
 import { clearIncompatibleWorkplace, ensureResidentWorkState, getActiveWorkers, updateResidentWork } from "./resident-work.js";
 import { JOB_DEFINITIONS, createInitialResidents } from "../residents/resident-definitions.js";
+import { ECONOMY_RULES } from "./economy-rules.js";
 
 const MINUTES_PER_DAY = 24 * 60;
-const BASE_RESOURCE_LIMITS = Object.freeze({ food: 240, materials: 160, incense: 100 });
+const BASE_RESOURCE_LIMITS = ECONOMY_RULES.storage;
 
 function roundResource(value) {
   return Math.round(value * 100) / 100;
@@ -13,6 +14,7 @@ export function ensureSimulationState(state) {
   state.day ??= 1;
   state.timeMinutes ??= 360;
   state.paused ??= false;
+  state.lastRescueAt ??= null;
   state.buildings ??= [];
   if (!Array.isArray(state.residents) || state.residents.length === 0) {
     state.residents = createInitialResidents();
@@ -56,15 +58,20 @@ export function enforceResourceLimits(state) {
 
 export function getSettlementEffects(state) {
   const canteens = (state.buildings ?? []).filter((building) => building.typeId === "canteen").length;
+  const staffedCanteens = getActiveWorkers(state, "steward")
+    .filter((resident) => state.buildings.some((building) => (
+      building.id === resident.workplaceBuildingId && building.typeId === "canteen"
+    ))).length;
   const definition = getBuildingDefinition("canteen");
   const reductionPerBuilding = definition?.effects?.foodConsumptionReduction ?? 0;
   const moodPerBuilding = definition?.effects?.moodPerTick ?? 0;
-  const foodConsumptionReduction = Math.min(0.5, canteens * reductionPerBuilding);
+  const foodConsumptionReduction = Math.min(0.5, staffedCanteens * reductionPerBuilding);
   return {
     canteens,
+    staffedCanteens,
     foodConsumptionReduction,
     foodConsumptionMultiplier: 1 - foodConsumptionReduction,
-    moodBonusPerTick: Math.min(0.2, canteens * moodPerBuilding),
+    moodBonusPerTick: Math.min(0.2, staffedCanteens * moodPerBuilding),
   };
 }
 
@@ -118,8 +125,44 @@ export function setResidentJob(state, residentId, jobId) {
   return { ok: true, resident };
 }
 
-function countBuildings(state, typeId) {
-  return state.buildings.filter((building) => building.typeId === typeId).length;
+export function getRescueStatus(state) {
+  const now = (state.day - 1) * MINUTES_PER_DAY + state.timeMinutes;
+  const elapsed = state.lastRescueAt === null || state.lastRescueAt === undefined
+    ? Infinity : now - state.lastRescueAt;
+  const remainingMinutes = Math.max(0, ECONOMY_RULES.rescue.cooldownMinutes - elapsed);
+  return { available: remainingMinutes === 0, remainingMinutes };
+}
+
+export function collectSupplies(state) {
+  ensureSimulationState(state);
+  const status = getRescueStatus(state);
+  if (!status.available) return { ok: false, reason: "rescue_cooldown", ...status };
+  const resident = [...state.residents].sort((a, b) => b.energy - a.energy)[0];
+  if (!resident || resident.energy < ECONOMY_RULES.rescue.energyCost) {
+    return { ok: false, reason: "rescue_exhausted" };
+  }
+  const limits = getResourceLimits(state);
+  if (state.resources.food >= limits.food && state.resources.materials >= limits.materials) {
+    return { ok: false, reason: "rescue_full" };
+  }
+
+  const wasPaused = state.paused;
+  state.paused = false;
+  for (let elapsed = 0; elapsed < ECONOMY_RULES.rescue.durationMinutes; elapsed += 10) {
+    advanceSimulation(state, 10);
+  }
+  state.paused = wasPaused;
+  resident.energy = Math.max(0, resident.energy - ECONOMY_RULES.rescue.energyCost);
+  resident.mood = Math.max(0, resident.mood - ECONOMY_RULES.rescue.moodCost);
+  const beforeFood = state.resources.food;
+  const beforeMaterials = state.resources.materials;
+  state.resources.food += ECONOMY_RULES.rescue.food;
+  state.resources.materials += ECONOMY_RULES.rescue.materials;
+  enforceResourceLimits(state);
+  state.lastRescueAt = (state.day - 1) * MINUTES_PER_DAY + state.timeMinutes;
+  return { ok: true, resident,
+    food: roundResource(state.resources.food - beforeFood),
+    materials: roundResource(state.resources.materials - beforeMaterials) };
 }
 
 export function advanceSimulation(state, minutes = 10) {
@@ -128,17 +171,24 @@ export function advanceSimulation(state, minutes = 10) {
 
   updateResidentWork(state, minutes);
   const hours = minutes / 60;
-  const farmers = Math.min(getActiveWorkers(state, "farmer").length, countBuildings(state, "farm"));
-  const artisans = Math.min(getActiveWorkers(state, "artisan").length, countBuildings(state, "workshop"));
-  const stewards = getActiveWorkers(state, "steward").length;
+  const workingAt = (job, type) => getActiveWorkers(state, job).filter((resident) => (
+    state.buildings.some((building) => building.id === resident.workplaceBuildingId && building.typeId === type)
+  ));
+  const farmers = workingAt("farmer", "farm");
+  const artisans = workingAt("artisan", "workshop");
+  const stewards = workingAt("steward", "warehouse");
   const effects = getSettlementEffects(state);
 
   const produced = {
-    food: farmers * JOB_DEFINITIONS.farmer.amountPerHour * hours,
-    materials: artisans * JOB_DEFINITIONS.artisan.amountPerHour * hours,
-    incense: stewards * JOB_DEFINITIONS.steward.amountPerHour * hours,
+    food: farmers.reduce((sum, resident) => sum + workerEfficiency(resident), 0)
+      * JOB_DEFINITIONS.farmer.amountPerHour * hours,
+    materials: artisans.reduce((sum, resident) => sum + workerEfficiency(resident), 0)
+      * JOB_DEFINITIONS.artisan.amountPerHour * hours,
+    incense: stewards.reduce((sum, resident) => sum + workerEfficiency(resident), 0)
+      * JOB_DEFINITIONS.steward.amountPerHour * hours,
   };
-  const foodConsumed = state.residents.length * hours * effects.foodConsumptionMultiplier;
+  const foodConsumed = state.residents.length * ECONOMY_RULES.foodPerResidentHour
+    * hours * effects.foodConsumptionMultiplier;
   state.resources.food = roundResource(state.resources.food + produced.food - foodConsumed);
   state.resources.materials = roundResource(state.resources.materials + produced.materials);
   state.resources.incense = roundResource(state.resources.incense + produced.incense);
@@ -150,6 +200,8 @@ export function advanceSimulation(state, minutes = 10) {
       resident.energy = Math.max(0, resident.energy - minutes * 0.055);
     } else if (resident.activity === "resting") {
       resident.energy = Math.min(100, resident.energy + minutes * 0.08);
+    } else if (resident.activity === "waiting_home" || resident.activity === "exhausted") {
+      resident.energy = Math.min(100, resident.energy + minutes * 0.03);
     } else if (resident.activity.startsWith("walking")) {
       resident.energy = Math.max(0, resident.energy - minutes * 0.025);
     }
@@ -169,4 +221,8 @@ export function advanceSimulation(state, minutes = 10) {
     state.day += 1;
   }
   return { ...produced, foodConsumed };
+}
+
+function workerEfficiency(resident) {
+  return (0.5 + resident.energy / 200) * (0.5 + resident.mood / 200);
 }

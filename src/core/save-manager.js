@@ -10,10 +10,12 @@ export function serializeGameState(state) {
     day: state.day,
     timeMinutes: state.timeMinutes,
     paused: state.paused,
+    lastRescueAt: state.lastRescueAt,
     resources: state.resources,
     buildings: state.buildings,
     residents: state.residents,
     nextBuildingNumber: state.nextBuildingNumber,
+    mapRevision: state.mapRevision,
   });
 }
 
@@ -62,10 +64,16 @@ export function loadGameState(map, storage) {
     state.timeMinutes = Number.isFinite(saved.timeMinutes) && saved.timeMinutes >= 0
       ? saved.timeMinutes % 1440 : 360;
     state.paused = saved.paused === true;
+    const absoluteMinutes = (state.day - 1) * 1440 + state.timeMinutes;
+    state.lastRescueAt = Number.isFinite(saved.lastRescueAt)
+      && saved.lastRescueAt >= 0 && saved.lastRescueAt <= absoluteMinutes
+      ? saved.lastRescueAt : null;
     state.nextBuildingNumber = Math.max(
       Number(saved.nextBuildingNumber) || 1,
       ...state.buildings.map((building) => Number(building.id?.split("-").pop()) + 1 || 1),
     );
+    state.mapRevision = Number.isInteger(saved.mapRevision) && saved.mapRevision >= 0
+      ? saved.mapRevision : 0;
 
     for (const building of state.buildings) {
       for (let row = 0; row < building.height; row += 1) {

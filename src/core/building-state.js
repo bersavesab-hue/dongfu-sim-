@@ -1,16 +1,14 @@
 import { getBuildingDefinition, getFootprint } from "../building/building-definitions.js";
 import { isInsideMap } from "./map-grid.js";
+import { ECONOMY_RULES } from "./economy-rules.js";
 
 export function createBuildingState(map) {
   return {
     map,
     buildings: [],
-    resources: {
-      food: 120,
-      materials: 80,
-      incense: 0,
-    },
+    resources: { ...ECONOMY_RULES.initialResources },
     nextBuildingNumber: 1,
+    mapRevision: 0,
   };
 }
 
@@ -71,6 +69,7 @@ export function placeBuilding(state, typeId, x, y, rotation = 0) {
     height: check.footprint.height,
   };
   state.buildings.push(building);
+  state.mapRevision = (state.mapRevision ?? 0) + 1;
 
   for (let row = 0; row < building.height; row += 1) {
     for (let column = 0; column < building.width; column += 1) {
@@ -132,6 +131,7 @@ export function placeRoadBatch(state, cells) {
     state.map.tiles[cell.y * state.map.width + cell.x].buildingId = id;
     roads.push(road);
   }
+  state.mapRevision = (state.mapRevision ?? 0) + 1;
   return { ok: true, roads, cost: check.cost };
 }
 
@@ -148,6 +148,7 @@ export function demolishBuilding(state, buildingId) {
     }
   }
   state.buildings.splice(index, 1);
+  state.mapRevision = (state.mapRevision ?? 0) + 1;
   releaseResources(state.resources, definition.cost);
   return { ok: true, building };
 }
@@ -167,6 +168,7 @@ export function demolishRoadBatch(state, buildingIds) {
   }
   const removedIds = new Set(roads.map((road) => road.id));
   state.buildings = state.buildings.filter((building) => !removedIds.has(building.id));
+  state.mapRevision = (state.mapRevision ?? 0) + 1;
   state.resources.materials += refunded;
   return { ok: true, roads, refunded };
 }
